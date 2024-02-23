@@ -1,2 +1,4 @@
 **/terraform.tfstate*
 .terraform*
+**/kubeconfig.json
+**/kubeconfig.yaml
