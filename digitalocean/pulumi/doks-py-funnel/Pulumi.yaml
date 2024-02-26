@@ -1,0 +1,10 @@
+name: doks-py-funnel
+runtime:
+  name: python
+  options:
+    virtualenv: venv
+description: Expose DOKS services via funnel
+config:
+  pulumi:tags:
+    value:
+      pulumi:template: python

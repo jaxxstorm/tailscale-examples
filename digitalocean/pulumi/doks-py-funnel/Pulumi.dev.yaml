@@ -1,0 +1,7 @@
+config:
+  digitalocean:token:
+    secure: AAABAPkQQaCv5WXOOIHvT0ZfdvaLspqO3pa0XrVklxnjwNXYBPMLQiaUb5IMUdjCwgWfEDVUNMyS3ueNmlduawHoPr0JPeq9vX3YxY7rhgH8WOC4dXtdXryVDvMd7u6KhKMbSFLD2w==
+  tailscale:oauth_client_id:
+    secure: AAABAMGp/7M59MTlpsHCT5xFM8+suZFTZvDA0IjlsVH+C7WKQQiOIoW2HFk=
+  tailscale:oauth_client_secret:
+    secure: AAABAIzzdG6UZQ/tMwei2Mdo9d579CoBxrKMOXckYk68CvDy0a/KunNln8lPz5c8NyyxnrZTH5g7ZwQUWiOQIiTjx4BpbgC1bARPc0TW7y/XBPi+BNnDSMk/XA==
