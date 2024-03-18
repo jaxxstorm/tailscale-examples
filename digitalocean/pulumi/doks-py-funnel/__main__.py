@@ -19,7 +19,7 @@ cluster = do.KubernetesCluster(
     node_pool=do.KubernetesClusterNodePoolArgs(
         name="default",
         auto_scale=False,
-        node_count=1,
+        node_count=3,
         size="s-1vcpu-2gb",
     ),
 )
@@ -54,53 +54,33 @@ tailscale_operator = k8s.helm.v3.Release(
     opts=pulumi.ResourceOptions(provider=provider, parent=tailscale_ns),
 )
 
-wordpress = k8s.helm.v3.Release(
-    "wordpress",
-    chart="wordpress",
-    repository_opts=k8s.helm.v3.RepositoryOptsArgs(
-        repo="https://charts.bitnami.com/bitnami",
+external_ingress_ns = k8s.core.v1.Namespace(
+    "nginx",
+    metadata=k8s.meta.v1.ObjectMetaArgs(
+        name="nginx",
     ),
-    values={
-        "wordpressUsername": "lbrlabs",
-        "wordpressPassword": "correct-horse-battery-stable",
-        "wordpressEmail": "mail@lbrlabs.com",
-        "service": {
-          "type": "ClusterIP", # we don't want a digitalocean load balancer  
-        },
-        "ingress": {
-            "enabled": False,
-        },
-    },
     opts=pulumi.ResourceOptions(provider=provider),
 )
 
-svc = k8s.core.v1.Service.get("wordpress", pulumi.Output.concat(wordpress.status.namespace, "/", wordpress.status.name))
-
-# we create our own ingress
-
-ingress = k8s.networking.v1.Ingress(
-    "wordpress",
-    metadata=k8s.meta.v1.ObjectMetaArgs(
-        namespace="default",
-        annotations={
-            "tailscale.com/funnel": "true"
-        }
-    ),
-    spec=k8s.networking.v1.IngressSpecArgs(
-        default_backend=k8s.networking.v1.IngressBackendArgs(
-            service=k8s.networking.v1.IngressServiceBackendArgs(
-                name=svc.metadata.name,
-                port=k8s.networking.v1.ServiceBackendPortArgs(
-                    name="https",
-                ),
-            )
+external_ingress = k8s.helm.v3.Release(
+    "nginx",
+    args=k8s.helm.v3.ReleaseArgs(
+        chart="ingress-nginx",
+        namespace=external_ingress_ns.metadata.name,
+        repository_opts=k8s.helm.v3.RepositoryOptsArgs(
+            repo="https://kubernetes.github.io/ingress-nginx"
         ),
-        ingress_class_name="tailscale",
-        tls=[
-            k8s.networking.v1.IngressTLSArgs(
-                hosts=["wordpress"],
-            ),
-        ],
+        values={
+            "controller": {
+                "ingressClass": "external",
+                "service": {
+                    "loadBalancerClass": "tailscale",
+                    "targetPorts": {
+                        "https": 80,
+                    },
+                },
+            }
+        },
     ),
-    opts=pulumi.ResourceOptions(provider=provider, parent=svc, depends_on=[tailscale_operator]),
+    opts=pulumi.ResourceOptions(provider=provider, parent=external_ingress_ns, depends_on=[tailscale_operator]),
 )

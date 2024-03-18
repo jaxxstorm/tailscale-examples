@@ -36,7 +36,7 @@ cluster = lbrlabs_eks.Cluster(
     system_node_subnet_ids=vpc.private_subnet_ids,
     system_node_instance_types=["t3.large"],
     system_node_desired_count=1,
-    enable_external_ingress=False,
+    enable_external_ingress=True,
     enable_internal_ingress=False,
 )
 
@@ -109,6 +109,7 @@ example_labels = {
 example_ns = k8s.core.v1.Namespace(
     "example",
     metadata=k8s.meta.v1.ObjectMetaArgs(name="example"),
+    opts=pulumi.ResourceOptions(provider=provider, parent=provider),
 )
 
 example = k8s.apps.v1.Deployment(
@@ -151,7 +152,7 @@ svc = k8s.core.v1.Service(
         load_balancer_class="tailscale",
         ports=[k8s.core.v1.ServicePortArgs(port=50051, target_port=50051)],
     ),
-    opts=pulumi.ResourceOptions(provider=provider, parent=example_ns),
+    opts=pulumi.ResourceOptions(provider=provider, parent=example_ns, depends_on=[tailscale_operator]),
 )
 
 ingress = k8s.networking.v1.Ingress(
@@ -175,5 +176,5 @@ ingress = k8s.networking.v1.Ingress(
             ),
         ],
     ),
-    opts=pulumi.ResourceOptions(provider=provider, parent=svc),
+    opts=pulumi.ResourceOptions(provider=provider, parent=svc, depends_on=[tailscale_operator]),
 )
