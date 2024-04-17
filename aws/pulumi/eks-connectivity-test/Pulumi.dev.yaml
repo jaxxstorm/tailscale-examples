@@ -1,4 +1,4 @@
 config:
   aws:region: us-west-2
   eks-connectivity-test:ts_auth_key:
-    secure: AAABAIrbsQdk9Y7sjDy8+36ag40/PAaXSTVgRUkJEVNgsX1QGuRrCy6Ocj0hHPKQwToJI8Yhi4OR85IOgTTvz9vR2WcB2aBLkxOwIMaXv67fBMfRdLhL1sEZWLC9bgyXeUDU9cAcoarT4O+ToeLk
+    secure: AAABAOetyHFCj93Xf5tW5T0xyk7AB3nE5P+Iux/aEJg6TiTPeVjcIOYCObm2JLAJQmjug6OQGgu/2mq9lxx1Jc+S59l/X10tBUI+FK82K4WNMmXpVWInoOoTAQQMij5xjwE/d6upj94+mOdt

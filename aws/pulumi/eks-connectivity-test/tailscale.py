@@ -107,6 +107,10 @@ class Client(pulumi.ComponentResource):
                     )
                 ),
             ),
+            k8s.core.v1.EnvVarArgs(
+                name="TS_TAILSCALED_EXTRA_ARGS",
+                value="--debug=0.0.0.0:8181",
+            ),
             k8s.core.v1.EnvVarArgs(name="TS_DEBUG_FIREWALL_MODE", value="auto"),
             k8s.core.v1.EnvVarArgs(
                 name="TS_EXTRA_ARGS",

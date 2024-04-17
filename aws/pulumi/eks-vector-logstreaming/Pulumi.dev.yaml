@@ -1,0 +1,5 @@
+config:
+  aws:region: us-west-2
+  tailscale:oauth_client_id: kFiG9wfeZ921CNTRL
+  tailscale:oauth_client_secret:
+    secure: AAABAKFhp8yjgs/PrWijcGYehbrpru7DrC0ZAZ7sUMPWr7C7BwyrFE9JFMM1HqYLOS+lKBJ8RIO7g6vnU04yJCQLbGxp0rVUIC+2AtTOSQsIrV2XZwZyi4g0lVqiZilf
