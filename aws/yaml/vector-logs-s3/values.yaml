@@ -1,0 +1,33 @@
+logLevel: "debug"
+service:
+  annotations:
+    tailscale.com/expose: "true"
+env:
+- name: AWS_ACCESS_KEY_ID
+  value: <redacted>
+- name: AWS_SECRET_ACCESS_KEY
+  value: <redacted>
+- name: AWS_SESSION_TOKEN
+  value: <redacted> 
+customConfig:
+  data_dir: "/vector-data-dir"
+  api:
+    enabled: true
+    address: "0.0.0.0:8686"
+    playground: true
+  sources:
+    splunk_hec:
+      address: "0.0.0.0:8080"
+      type: "splunk_hec"
+  sinks:
+    s3_bucket:
+      type: "aws_s3"
+      inputs:
+      - "splunk_hec"
+      bucket: "<redacted>"
+      region: "us-east-1"
+      server_side_encryption: "AES256"
+      encoding:
+        codec: "json"
+
+
