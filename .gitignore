@@ -2,3 +2,4 @@
 .terraform*
 **/kubeconfig.json
 **/kubeconfig.yaml
+**/terraform.tfvars
