@@ -70,7 +70,7 @@ resource "aws_instance" "eu" {
   ami               = data.aws_ami.eu.id
   instance_type     = "t3.micro"
   subnet_id         = module.lbr-vpc-eu.private_subnets[0]
-  security_groups   = [aws_security_group.eu.id]
+  vpc_security_group_ids   = [aws_security_group.eu.id]
   key_name          = aws_key_pair.lbriggs.key_name
   source_dest_check = false
 
@@ -87,5 +87,5 @@ resource "aws_instance" "eu" {
 }
 
 output "eu_ip" {
-    value = aws_instance.eu.secondary_private_ips
+    value = aws_instance.eu.private_ip
 }
