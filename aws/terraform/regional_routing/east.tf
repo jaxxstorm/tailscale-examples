@@ -19,7 +19,7 @@ module "ubuntu-tailscale-east" {
   source           = "git@github.com:lbrlabs/terraform-cloudinit-tailscale.git"
   auth_key         = var.tailscale_auth_key
   enable_ssh       = true
-  hostname         = "subnet-router-east"
+  hostname         = "regional-subnet-router-east"
   advertise_tags   = ["tag:subnet-router"]
   advertise_routes = [local.vpc_cidr_eu, local.vpc_cidr_east]
 }
@@ -54,6 +54,14 @@ resource "aws_security_group" "east" {
     protocol    = "udp"
     cidr_blocks = ["0.0.0.0/0"]
     description = "Tailscale UDP port"
+  }
+
+  ingress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = [local.vpc_cidr_east]
+    description = "Allow all traffic for local testing"
   }
 
   egress {
@@ -121,6 +129,8 @@ resource "aws_instance" "east" {
   }
 
   tags = {
-    Name = "lbr-subnet-router-east"
+    Name = "regional-subnet-router-east"
   }
 }
+
+

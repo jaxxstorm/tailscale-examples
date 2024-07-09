@@ -56,25 +56,16 @@ resource "aws_security_group" "eu" {
   }
 }
 
-resource "aws_key_pair" "lbriggs" {
+resource "aws_instance" "eu-client" {
 
-  provider   = aws.eu
-  key_name   = "lbriggs"
-  public_key = file("~/.ssh/id_rsa.pub")
-
-}
-
-resource "aws_instance" "eu" {
-
-  provider          = aws.eu
-  ami               = data.aws_ami.eu.id
-  instance_type     = "t3.micro"
-  subnet_id         = module.lbr-vpc-eu.private_subnets[0]
-  vpc_security_group_ids   = [aws_security_group.eu.id]
-  key_name          = aws_key_pair.lbriggs.key_name
-  source_dest_check = false
+  provider               = aws.eu
+  ami                    = data.aws_ami.eu.id
+  instance_type          = "t3.micro"
+  subnet_id              = module.lbr-vpc-eu.private_subnets[0]
+  vpc_security_group_ids = [aws_security_group.eu.id]
 
   ebs_optimized = true
+  associate_public_ip_address = false
 
   metadata_options {
     http_endpoint = "enabled"
@@ -82,10 +73,11 @@ resource "aws_instance" "eu" {
   }
 
   tags = {
-    Name = "demo-streamer"
+    Name = "eu-client"
   }
 }
 
-output "eu_ip" {
-    value = aws_instance.eu.private_ip
+output "eu_client_ip" {
+    value = aws_instance.eu-client.private_ip
 }
+

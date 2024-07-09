@@ -1,7 +1,7 @@
 locals {
-  vpc_cidr_east = "172.16.0.0/16"
+  vpc_cidr_east = "10.1.0.0/16"
   vpc_cidr_west = "10.0.0.0/16"
-  vpc_cidr_eu   = "172.20.0.0/16"
+  vpc_cidr_eu   = "10.30.0.0/16"
 
   vpc_subnets_east = cidrsubnets(local.vpc_cidr_east, 3, 3, 3, 3, 3, 3)
   vpc_subnets_west = cidrsubnets(local.vpc_cidr_west, 3, 3, 3, 3, 3, 3)

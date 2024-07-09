@@ -19,7 +19,7 @@ module "ubuntu-tailscale-west" {
   source           = "git@github.com:lbrlabs/terraform-cloudinit-tailscale.git"
   auth_key         = var.tailscale_auth_key
   enable_ssh       = true
-  hostname         = "subnet-router-west"
+  hostname         = "regional-subnet-router-west"
   advertise_tags   = ["tag:subnet-router"]
   advertise_routes = [local.vpc_cidr_eu, local.vpc_cidr_west]
 }
@@ -94,32 +94,10 @@ resource "aws_instance" "west" {
   }
 
   tags = {
-    Name = "lbr-subnet-router-west"
+    Name = "regional-subnet-router-east"
   }
 }
 
-resource "aws_instance" "client" {
-
-  provider               = aws.west
-  ami                    = data.aws_ami.west.id
-  instance_type          = "t3.micro"
-  subnet_id              = module.lbr-vpc-west.private_subnets[0]
-  vpc_security_group_ids = [aws_security_group.west.id]
-
-  ebs_optimized     = true
-  source_dest_check = false
-
-  associate_public_ip_address = true
-
-  metadata_options {
-    http_endpoint = "enabled"
-    http_tokens   = "required"
-  }
-
-  tags = {
-    Name = "lbr-client-west"
-  }
-}
 
 resource "aws_vpc_peering_connection" "west" {
   provider      = aws.west

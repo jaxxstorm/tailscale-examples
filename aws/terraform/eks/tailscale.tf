@@ -60,21 +60,3 @@ resource "helm_release" "tailscale_operator" {
   }
 
 }
-
-resource "kubernetes_manifest" "test-configmap" {
-  manifest = {
-    "apiVersion" = "tailscale.com/v1alpha1"
-    "kind"       = "Connector"
-    "metadata" = {
-      "name"      = "vpc-cidr"
-    }
-    "spec" = {
-        "hostname" = format("example-%s-cluster-subnet-router", module.eks.cluster_name)
-        "subnetRouter" = {
-            "advertiseRoutes" = [
-                local.vpc_cidr
-            ]
-        }
-    }
-  }
-}
