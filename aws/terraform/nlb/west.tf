@@ -36,7 +36,7 @@ data "aws_ami" "ubuntu-west" {
 module "ubuntu-tailscale-client-west" {
   source         = "/Users/lbriggs/src/github/lbrlabs/terraform-cloudinit-tailscale"
   auth_key       = var.tailscale_auth_key
-  enable_ssh     = false
+  enable_ssh     = true
   hostname       = "ubuntu-nlb-west"
   advertise_tags = ["tag:west"]
   track          = "unstable"
@@ -147,7 +147,7 @@ resource "aws_lb_target_group" "tg_west" {
   vpc_id      = module.lbr-vpc-west.vpc_id
   health_check {
     enabled             = true
-    interval            = 30
+    interval            = 10
     port                = "22"
     protocol            = "TCP"
     timeout             = 10

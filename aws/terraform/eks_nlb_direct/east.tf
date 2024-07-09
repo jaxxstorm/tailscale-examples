@@ -5,7 +5,7 @@ module "lbr-vpc-east" {
   source  = "terraform-aws-modules/vpc/aws"
   version = "5.8.1"
 
-  name               = "lbr-nlb-west"
+  name               = "lbr-eks-west"
   cidr               = local.vpc_cidr_east
   enable_nat_gateway = true
 
@@ -14,7 +14,6 @@ module "lbr-vpc-east" {
   public_subnets  = local.vpc_public_subnets_east
 
 }
-
 
 data "aws_ami" "ubuntu-east" {
   provider    = aws.east
@@ -36,7 +35,7 @@ data "aws_ami" "ubuntu-east" {
 module "ubuntu-tailscale-client-east" {
   source         = "/Users/lbriggs/src/github/lbrlabs/terraform-cloudinit-tailscale"
   auth_key       = var.tailscale_auth_key
-  enable_ssh     = true
+  enable_ssh     = false
   hostname       = "ubuntu-nlb-east"
   advertise_tags = ["tag:east"]
 }
