@@ -22,10 +22,11 @@ module "eks" {
   source  = "terraform-aws-modules/eks/aws"
   version = "~> 20.0"
 
-  cluster_name    = "lbriggs"
+  cluster_name    = "lbr-eks"
   cluster_version = "1.29"
 
   cluster_endpoint_public_access = true
+  
 
   cluster_addons = {
     coredns = {
@@ -50,6 +51,9 @@ module "eks" {
 
   eks_managed_node_groups = {
     example = {
+      iam_role_additional_policies = {
+        AmazonSSMManagedInstanceCore = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+      }
       min_size     = 1
       max_size     = 3
       desired_size = 1
@@ -80,107 +84,29 @@ resource "aws_security_group_rule" "metrics" {
     security_group_id = module.eks.node_security_group_id
 }
 
-resource "aws_lb" "nlb_west" {
-  provider           = aws.west
-  name               = "nlb-west"
-  internal           = false
-  load_balancer_type = "network"
-  subnets            = module.lbr-vpc-west.public_subnets
-
-  enable_deletion_protection = false
-
-  tags = {
-    Name = "nlb-west"
-  }
+resource "aws_security_group_rule" "tailscale" {
+    provider = aws.west
+    type     = "ingress"
+    from_port = 41641
+    to_port = 41641
+    protocol = "udp"
+    cidr_blocks = ["0.0.0.0/0"]
+    security_group_id = module.eks.node_security_group_id
 }
 
-data "dns_a_record_set" "nlb_west" {
-  host = aws_lb.nlb_west.dns_name
+resource "aws_security_group_rule" "tailscale_metrics" {
+    provider = aws.west
+    type     = "ingress"
+    from_port = 9100
+    to_port = 9100
+    protocol = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+    security_group_id = module.eks.node_security_group_id
 }
 
-resource "aws_lb_target_group" "tg_west" {
-  provider    = aws.west
-  name        = "tg-west"
-  port        = 41641
-  protocol    = "UDP"
-  target_type = "ip"
-  vpc_id      = module.lbr-vpc-west.vpc_id
-  health_check {
-    enabled             = true
-    interval            = 10
-    port                = "9001" # port for metrics endpoint
-    protocol            = "TCP"
-    timeout             = 10
-    healthy_threshold   = 3
-    unhealthy_threshold = 3
 
-  }
-  target_health_state {
-    enable_unhealthy_connection_termination = false
-  }
-}
 
-resource "aws_lb_target_group_attachment" "tga_west" {
-  provider         = aws.west
-  target_group_arn = aws_lb_target_group.tg_west.arn
-  target_id        = "172.17.2.150"
-  port             = 41641
-}
 
-# Create a listener for the NLB
-resource "aws_lb_listener" "listener_west" {
-  provider          = aws.west
-  load_balancer_arn = aws_lb.nlb_west.arn
-  port              = 41641
-  protocol          = "UDP"
-
-  default_action {
-    type             = "forward"
-    target_group_arn = aws_lb_target_group.tg_west.arn
-  }
-}
-
-resource "aws_lb_target_group" "tg_west_metrics" {
-  provider    = aws.west
-  name        = "tg-west-metrics"
-  port        = 9001
-  protocol    = "TCP"
-  target_type = "ip"
-  vpc_id      = module.lbr-vpc-west.vpc_id
-  health_check {
-    enabled             = true
-    interval            = 10
-    port                = "9001" # port for metrics endpoint
-    protocol            = "TCP"
-    timeout             = 10
-    healthy_threshold   = 3
-    unhealthy_threshold = 3
-
-  }
-  target_health_state {
-    enable_unhealthy_connection_termination = false
-  }
-}
-
-resource "aws_lb_target_group_attachment" "tga_west_metrics" {
-  provider         = aws.west
-  target_group_arn = aws_lb_target_group.tg_west.arn
-  target_id        = "172.17.2.150"
-  port             = 9001
-}
-
-# Create a listener for the NLB
-resource "aws_lb_listener" "listener_west_metrics" {
-  provider          = aws.west
-  load_balancer_arn = aws_lb.nlb_west.arn
-  port              = 9001
-  protocol          = "TCP"
-
-  default_action {
-    type             = "forward"
-    target_group_arn = aws_lb_target_group.tg_west_metrics.arn
-  }
-}
 
 
 

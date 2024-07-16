@@ -31,55 +31,30 @@ provider "kubernetes" {
   }
 }
 
-resource "kubernetes_namespace" "tailscale" {
-  metadata {
-    name = "tailscale"
-  }
-}
 
-resource "helm_release" "tailscale_operator" {
-  name = "tailscale-operator"
-
-  repository = "https://pkgs.tailscale.com/helmcharts"
-  chart      = "tailscale-operator"
-  namespace  = kubernetes_namespace.tailscale.metadata[0].name
-
-  set {
-    name  = "oauth.clientId"
-    value = var.tailscale_oauth_clientid
-  }
-
-  set {
-    name  = "oauth.clientSecret"
-    value = var.tailscale_oauth_clientsecret
-  }
-
-  set {
-    name  = "operatorConfig.hostname"
-    value = format("tailscale-operator-%s", module.eks.cluster_name)
-  }
-
-}
 
 resource "kubernetes_secret" "tailscale" {
   metadata {
-    name      = "subnet-router"
+    name = "subnet-router"
     labels = {
       app = "subnet-router"
     }
+  }
+  data = {
+    tsstate = ""
   }
 
 }
 
 resource "kubernetes_service_account" "tailscale" {
   metadata {
-    name      = "subnet-router"
+    name = "subnet-router"
   }
 }
 
 resource "kubernetes_role" "tailscale" {
   metadata {
-    name      = "subnet-router"
+    name = "subnet-router"
   }
 
   rule {
@@ -91,7 +66,7 @@ resource "kubernetes_role" "tailscale" {
 
 resource "kubernetes_role_binding" "tailscale" {
   metadata {
-    name      = "subnet-router"
+    name = "subnet-router"
   }
 
   role_ref {
@@ -106,8 +81,20 @@ resource "kubernetes_role_binding" "tailscale" {
   }
 }
 
+resource "aws_eip" "nlb_eip" {
+  
+  count = 3
 
-resource "kubernetes_pod" "subnet_router" {
+  tags = {
+    Name = "Tailscale NLB EIP"
+  }
+}
+
+locals {
+  pretendpoints = join(",", [for eip in aws_eip.nlb_eip : "${eip.public_ip}:41641"])
+}
+
+resource "kubernetes_stateful_set" "subnet_router" {
   metadata {
     name = "subnet-router"
     labels = {
@@ -116,90 +103,133 @@ resource "kubernetes_pod" "subnet_router" {
   }
 
   spec {
+    service_name = "subnet-router"
+    replicas     = 1
 
-    service_account_name = kubernetes_service_account.tailscale.metadata[0].name
+    selector {
+      match_labels = {
+        app = "tailscale"
+      }
+    }
 
-    host_network = true
-    dns_policy   = "ClusterFirstWithHostNet"
-
-    container {
-      name              = "tailscale"
-      image             = "tailscale/tailscale:unstable"
-      image_pull_policy = "Always"
-
-      port {
-        container_port = 41641
+    template {
+      metadata {
+        labels = {
+          app = "tailscale"
+        }
       }
 
+      spec {
+        service_account_name = kubernetes_service_account.tailscale.metadata[0].name
+
+        container {
+          name              = "tailscale"
+          image             = "tailscale/tailscale:unstable"
+          image_pull_policy = "Always"
+
+          port {
+            container_port = 41641
+            name = "tailscaled"
+            protocol = "UDP"
+          }
+
+          port {
+            container_port = 9100
+            name = "metrics"
+          }
+
+          env {
+            name  = "TS_DEBUG_FIREWALL_MODE"
+            value = "auto"
+          }
+
+          env {
+            name  = "TS_USERSPACE"
+            value = "false"
+          }
+
+          env {
+            name  = "TS_TAILSCALED_EXTRA_ARGS"
+            value = "--debug=0.0.0.0:9100"
+          }
+
+          env {
+            name  = "TS_AUTH_KEY"
+            value = var.tailscale_auth_key
+          }
+
+          env {
+            name  = "TS_ROUTES"
+            value = local.vpc_cidr_west
+          }
+
+          env {
+            name  = "PORT"
+            value = "41641"
+          }
+
+          env {
+            name = "TS_KUBE_SECRET"
+            value_from {
+              secret_key_ref {
+                name = kubernetes_secret.tailscale.metadata[0].name
+                key  = "tsstate"
+              }
+            }
+          }
+
+          env {
+            name  = "TS_HOSTNAME"
+            value = "subnet-router"
+          }
+
+          env {
+            name  = "TS_DEBUG_PRETENDPOINT"
+            value = local.pretendpoints
+          }
+
+          security_context {
+            capabilities {
+              add = ["NET_ADMIN"]
+            }
+          }
 
 
-      env {
-        name  = "TS_USERSPACE"
-        value = "false"
-      }
 
-      env {
-        name  = "TS_DEBUG_FIREWALL_MODE"
-        value = "auto"
-      }
-
-      env {
-        name  = "TS_USERSPACE"
-        value = "true"
-      }
-
-      env {
-        name= "TS_TAILSCALED_EXTRA_ARGS"
-        value= "--debug=0.0.0.0:9001"
-      }
-
-      env {
-        name  = "TS_AUTH_KEY"
-        value = var.tailscale_auth_key
-      }
-
-      env {
-        name  = "TS_ROUTES"
-        value = local.vpc_cidr_west
-      }
-
-      env {
-        name  = "PORT"
-        value = "41641"
-      }
-
-      env {
-        name  = "TS_STATE_DIR"
-        value = "mem:"
-      }
-
-      env {
-        name  = "TS_DEBUG_PRETENDPOINT"
-        value = "${data.dns_a_record_set.nlb_west.addrs[0]}:41641"
-      }
-
-      env {
-        name  = "TS_HOSTNAME"
-        value = "subnet-router"
-      }
-
-      security_context {
-        capabilities {
-          add = ["NET_ADMIN"]
         }
       }
     }
   }
 }
 
-data "kubernetes_pod_v1" "subnet_router" {
+resource "kubernetes_service" "tailscale_nlb" {
   metadata {
-    name = kubernetes_pod.subnet_router.metadata[0].name
+    name = "tailscale-nlb"
+    annotations = {
+      "service.beta.kubernetes.io/aws-load-balancer-type" = "nlb"
+      "service.beta.kubernetes.io/aws-load-balancer-nlb-target-type" = "instance"
+      "service.beta.kubernetes.io/aws-load-balancer-scheme" = "internet-facing"
+      "service.beta.kubernetes.io/aws-load-balancer-healthcheck-protocol" = "tcp"
+      "service.beta.kubernetes.io/aws-load-balancer-healthcheck-interval" = "10"
+      "service.beta.kubernetes.io/aws-load-balancer-eip-allocations" = join(",", aws_eip.nlb_eip[*].id)
+    }
   }
-}
 
-output "subnet_router_ip" {
-  value = data.kubernetes_pod_v1.subnet_router
+  spec {
+    selector = {
+      app = "tailscale"
+    }
+
+    port {
+      name        = "tailscaled"
+      port        = 41641
+      target_port = 41641
+      protocol    = "UDP"
+    }
+
+
+    type = "LoadBalancer"
+  }
 }
 
 
