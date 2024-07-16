@@ -15,6 +15,15 @@ module "lbr-vpc-west" {
 
 }
 
+resource "aws_eip" "nlb_eip" {
+
+  count = length(module.lbr-vpc-west.azs)
+
+  tags = {
+    Name = "Tailscale EC2 NLB EIP"
+  }
+}
+
 
 data "aws_ami" "ubuntu-west" {
   provider    = aws.west
@@ -34,11 +43,13 @@ data "aws_ami" "ubuntu-west" {
 }
 
 module "ubuntu-tailscale-client-west" {
-  source         = "/Users/lbriggs/src/github/lbrlabs/terraform-cloudinit-tailscale"
+  source         = "lbrlabs/tailscale/cloudinit"
+  version        = "0.0.4"
   auth_key       = var.tailscale_auth_key
   enable_ssh     = true
   hostname       = "ubuntu-nlb-west"
   advertise_tags = ["tag:west"]
+  
   track          = "unstable"
   additional_parts = [
     {
@@ -52,7 +63,7 @@ module "ubuntu-tailscale-client-west" {
         # Create or overwrite the override.conf file
         cat << EOT > /etc/systemd/system/tailscaled.service.d/override.conf
         [Service]
-        Environment="TS_DEBUG_PRETENDPOINT=${data.dns_a_record_set.nlb_west.addrs[0]}:41641"
+        Environment="TS_DEBUG_PRETENDPOINT=${local.pretendpoints}"
         EOT
 
         # Reload systemd to recognize the changes
@@ -66,6 +77,10 @@ module "ubuntu-tailscale-client-west" {
       content_type = "text/x-shellscript"
     }
   ]
+}
+
+locals {
+  pretendpoints = join(",", [for eip in aws_eip.nlb_eip : "${eip.public_ip}:41641"])
 }
 
 resource "aws_security_group" "west" {
@@ -98,39 +113,115 @@ resource "aws_security_group" "west" {
   }
 }
 
-resource "aws_instance" "west" {
-  provider               = aws.west
-  ami                    = data.aws_ami.ubuntu-west.id
-  instance_type          = "t3.micro"
-  subnet_id              = module.lbr-vpc-west.private_subnets[0]
-  vpc_security_group_ids = [aws_security_group.west.id]
-  ebs_optimized          = true
-  iam_instance_profile   = aws_iam_instance_profile.ssm_instance_profile.name
-  user_data_replace_on_change = true
-  user_data_base64       = module.ubuntu-tailscale-client-west.rendered
+resource "aws_ssm_parameter" "asg_state" {
+  name        = "/lbr-nlb-west/asg-state"
+  description = "Tailscale state info information for lbr-nlb-west ASG"
+  type        = "String"
+  value       = "{}"  # Initial empty JSON object
 
-  metadata_options {
-    http_endpoint = "enabled"
-    http_tokens   = "required"
+  tags = {
+    Project     = "lbr-nlb-west"
+  }
+  lifecycle {
+    ignore_changes = [ value ]
+  }
+}
+
+resource "aws_iam_policy" "ssm_parameter_access" {
+  name        = "SSMParameterAccess"
+  path        = "/"
+  description = "IAM policy for accessing SSM Parameter"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "ssm:GetParameter",
+          "ssm:PutParameter"
+        ]
+        Resource = aws_ssm_parameter.asg_state.arn
+      }
+    ]
+  })
+}
+
+# Attach the SSM Parameter access policy to the existing IAM role
+resource "aws_iam_role_policy_attachment" "ssm_parameter_policy_attachment" {
+  policy_arn = aws_iam_policy.ssm_parameter_access.arn
+  role       = aws_iam_role.tailscale.name  
+}
+
+
+module "asg" {
+  source = "terraform-aws-modules/autoscaling/aws"
+  version = "6.10.0" 
+
+  # Autoscaling group
+  name = "lbr-nlb-west-asg"
+
+  min_size                  = 1
+  max_size                  = 1
+  desired_capacity          = 1
+  wait_for_capacity_timeout = 0
+  health_check_type         = "ELB"
+  vpc_zone_identifier       = module.lbr-vpc-west.private_subnets
+
+  # Launch template
+  launch_template_name        = "lbr-nlb-west-lt"
+  launch_template_description = "Launch template for Tailscale NLB instance"
+  update_default_version      = true
+
+  image_id          = data.aws_ami.ubuntu-west.id
+  instance_type     = "t3.micro"
+  ebs_optimized     = true
+  enable_monitoring = true
+
+  # Security group
+  security_groups = [aws_security_group.west.id]
+
+  # IAM instance profile
+  create_iam_instance_profile = false
+  iam_instance_profile_name   = aws_iam_instance_profile.ssm_instance_profile.name
+
+  # User data
+  user_data = module.ubuntu-tailscale-client-west.rendered
+
+  # Target group attachment
+  target_group_arns = [aws_lb_target_group.tg_west.arn]
+
+  # Metadata options
+  metadata_options = {
+    http_endpoint               = "enabled"
+    http_tokens                 = "required"
+    http_put_response_hop_limit = 1
   }
 
+  # Tags
   tags = {
     Name = "lbr-nlb-west"
   }
 }
 
-data "dns_a_record_set" "nlb_west" {
-  host = aws_lb.nlb_west.dns_name
-}
 
 resource "aws_lb" "nlb_west" {
   provider           = aws.west
   name               = "nlb-west"
   internal           = false
   load_balancer_type = "network"
-  subnets            = module.lbr-vpc-west.public_subnets
 
   enable_deletion_protection = false
+
+  # Use EIPs for the NLB
+  dynamic "subnet_mapping" {
+    for_each = module.lbr-vpc-west.public_subnets
+    content {
+      subnet_id     = subnet_mapping.value
+      allocation_id = aws_eip.nlb_eip[subnet_mapping.key].id
+    }
+  }
+
 
   tags = {
     Name = "nlb-west"
@@ -158,14 +249,6 @@ resource "aws_lb_target_group" "tg_west" {
   target_health_state {
     enable_unhealthy_connection_termination = false
   }
-}
-
-# Attach the instance to the target group
-resource "aws_lb_target_group_attachment" "tga_west" {
-  provider         = aws.west
-  target_group_arn = aws_lb_target_group.tg_west.arn
-  target_id        = aws_instance.west.id
-  port             = 41641
 }
 
 # Create a listener for the NLB

@@ -64,15 +64,15 @@ resource "aws_security_group" "east" {
 }
 
 resource "aws_instance" "east" {
-  provider             = aws.east
-  ami                  = data.aws_ami.ubuntu-east.id
-  instance_type        = "t3.micro"
-  subnet_id            = module.lbr-vpc-east.private_subnets[0]
-  vpc_security_group_ids = [ aws_security_group.east.id]
-  ebs_optimized        = true
-  iam_instance_profile = aws_iam_instance_profile.ssm_instance_profile.name
+  provider                    = aws.east
+  ami                         = data.aws_ami.ubuntu-east.id
+  instance_type               = "t3.micro"
+  subnet_id                   = module.lbr-vpc-east.private_subnets[0]
+  vpc_security_group_ids      = [aws_security_group.east.id]
+  ebs_optimized               = true
+  iam_instance_profile        = aws_iam_instance_profile.ssm_instance_profile.name
   user_data_replace_on_change = true
-  user_data_base64     = module.ubuntu-tailscale-client-east.rendered
+  user_data_base64            = module.ubuntu-tailscale-client-east.rendered
 
 
   metadata_options {
