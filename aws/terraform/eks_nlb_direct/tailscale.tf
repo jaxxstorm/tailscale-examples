@@ -163,6 +163,11 @@ resource "kubernetes_stateful_set" "subnet_router" {
             value = local.vpc_cidr_west
           }
 
+           env {
+            name  = "TS_EXTRA_ARGS"
+            value = "--advertise-tags=tag:subnet-router"
+          }
+
           env {
             name  = "PORT"
             value = "41641"
@@ -183,10 +188,10 @@ resource "kubernetes_stateful_set" "subnet_router" {
             value = "subnet-router"
           }
 
-          env {
-            name  = "TS_DEBUG_PRETENDPOINT"
-            value = local.pretendpoints
-          }
+          # env {
+          #   name  = "TS_DEBUG_PRETENDPOINT"
+          #   value = local.pretendpoints
+          # }
 
           security_context {
             capabilities {

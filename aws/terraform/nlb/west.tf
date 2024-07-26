@@ -50,7 +50,7 @@ module "ubuntu-tailscale-client-west" {
   hostname       = "ubuntu-nlb-west"
   advertise_tags = ["tag:west"]
   
-  track          = "unstable"
+  track          = "stable"
   additional_parts = [
     {
       filename     = "tailscale_overrides.sh"
@@ -187,6 +187,9 @@ module "asg" {
 
   # User data
   user_data = module.ubuntu-tailscale-client-west.rendered
+  instance_refresh = {
+    strategy = "Rolling"
+  }
 
   # Target group attachment
   target_group_arns = [aws_lb_target_group.tg_west.arn]
