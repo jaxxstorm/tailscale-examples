@@ -270,7 +270,7 @@ resource "aws_lb_listener" "listener_west" {
 resource "aws_lb_target_group_attachment" "hardnat_west" {
   provider         = aws.west
   target_group_arn = aws_lb_target_group.tg_west.arn
-  target_id        = aws_instance.hardnat-west.id
+  target_id        = aws_instance.hardnat-west-lb.id
   port             = 41641
 }
 
@@ -333,7 +333,7 @@ module "easynat_tailscale_west" {
   source         = "git@github.com:lbrlabs/terraform-cloudinit-tailscale.git"
   auth_key       = var.tailscale_auth_key
   enable_ssh     = true
-  hostname       = "lbr-easynat-west"
+  hostname       = "easynat-west"
   advertise_tags = ["tag:easy-nat"]
   additional_parts = [
     {

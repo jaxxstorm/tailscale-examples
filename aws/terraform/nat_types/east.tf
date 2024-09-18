@@ -191,7 +191,7 @@ module "easynat_tailscale_east" {
   source         = "git@github.com:lbrlabs/terraform-cloudinit-tailscale.git"
   auth_key       = var.tailscale_auth_key
   enable_ssh     = true
-  hostname       = "lbr-easynat-east"
+  hostname       = "easynat-east"
   advertise_tags = ["tag:easy-nat"]
   additional_parts = [
     {
