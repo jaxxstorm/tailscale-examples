@@ -60,3 +60,14 @@ module "eks" {
     Owner       = "lbriggs"
   }
 }
+
+resource "aws_security_group_rule" "eks_udp_inbound" {
+  type              = "ingress"
+  from_port         = 0
+  to_port           = 0
+  protocol          = "udp"
+  security_group_id = module.eks.node_security_group_id
+  cidr_blocks       = ["0.0.0.0/0"]
+  ipv6_cidr_blocks  = ["::/0"] # Allow IPv6 traffic
+  description       = "Allow UDP traffic for Tailscale"
+}

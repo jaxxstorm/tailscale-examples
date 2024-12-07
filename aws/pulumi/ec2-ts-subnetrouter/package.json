@@ -1,0 +1,14 @@
+{
+    "name": "ec2-ts-subnetrouter",
+    "main": "index.ts",
+    "devDependencies": {
+        "@types/node": "^18",
+        "typescript": "^5.0.0"
+    },
+    "dependencies": {
+        "@pulumi/aws": "^6.0.0",
+        "@pulumi/awsx": "^2.0.2",
+        "@pulumi/cloudinit": "^1.4.8",
+        "@pulumi/pulumi": "^3.113.0"
+    }
+}

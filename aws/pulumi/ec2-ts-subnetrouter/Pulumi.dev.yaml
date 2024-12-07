@@ -1,0 +1,4 @@
+config:
+  aws:region: us-west-2
+  ec2-ts-subnetrouter:tailscaleOauthClientSecret:
+    secure: AAABAGERMAxX7Wh0kK0PC1HepGrIocSodAHInU2ZclNRLPQOepM5r2uJ/qw7Ot+5aPSWHDOuPC3enz1j1FzmQNCagDy1IhV4+WRGOQJv2ZhmTRqXU9Zq/Xso+FwHCmI=
