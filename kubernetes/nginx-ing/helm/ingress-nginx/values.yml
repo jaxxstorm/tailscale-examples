@@ -1,0 +1,8 @@
+controller:
+  service:
+    loadBalancerClass: tailscale
+
+  ingressClassResource:
+    name: ts
+    default: false
+    controllerValue: "k8s.io/ingress-nginx/ts"
