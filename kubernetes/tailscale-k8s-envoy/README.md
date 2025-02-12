@@ -111,7 +111,7 @@ k logs -l app=tailscale-server -c tailscale-sidecar
 2025/02/12 03:05:19 [RATELIMIT] format("control: controlhttp: forcing port 443 dial due to recent noise dial")
 2025/02/12 03:05:19 control: netmap: got new dial plan from control
 2025/02/12 02:59:35 control: NetInfo: NetInfo{varies=true hairpin= ipv6=false ipv6os=true udp=true icmpv4=false derp=#10 portmap= link="" firewallmode="ipt-default"}
-2025/02/12 02:59:35 magicsock: endpoints changed: 52.32.250.12:15157 (stun), 10.1.2.121:58635 (local)
+2025/02/12 02:59:35 magicsock: endpoints changed: <redacted>:15157 (stun), 10.1.2.121:58635 (local)
 2025/02/12 02:59:35 health(warnable=no-derp-connection): ok
 2025/02/12 02:59:35 [RATELIMIT] format("health(warnable=%s): ok")
 boot: 2025/02/12 02:59:35 Startup complete, waiting for shutdown signal
