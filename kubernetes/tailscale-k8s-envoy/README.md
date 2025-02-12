@@ -100,7 +100,6 @@ Note: the `add 1 cluster` means things are working great
 
 ```bash
 k logs -l app=tailscale-server -c tailscale-sidecar
- ☁️   tailscale-sandbox 
 2025/02/12 02:59:53 wgengine: Reconfig: configuring userspace WireGuard config (with 2/3 peers)
 2025/02/12 02:59:53 magicsock: disco: node [jMEaP] d:4d603761fc7e1dd0 now using 10.1.2.121:58635 mtu=1360 tx=3d3704ebd3a5
 2025/02/12 03:05:18 Received error: PollNetMap: unexpected EOF
