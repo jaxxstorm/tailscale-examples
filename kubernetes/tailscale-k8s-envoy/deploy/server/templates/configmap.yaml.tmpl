@@ -1,0 +1,40 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: envoy-config
+data:
+  envoy.yaml: |
+    static_resources:
+      clusters:
+      - name: "xds_cluster"
+        type: STRICT_DNS
+        dns_lookup_family: AUTO
+        connect_timeout: 1s
+        http2_protocol_options: {}
+        load_assignment:
+          cluster_name: "xds_cluster"
+          endpoints:
+            - lb_endpoints:
+                - endpoint:
+                    address:
+                      socket_address:
+                        address: {{ required "You must set .Values.controlPlaneHost" .Values.controlPlaneHost | quote }}
+                        port_value: 18000
+
+    dynamic_resources:
+      ads_config:
+        api_type: GRPC
+        transport_api_version: V3
+        grpc_services:
+          - envoy_grpc:
+              cluster_name: "xds_cluster"
+
+      # Tells Envoy to fetch listeners from ADS
+      lds_config:
+        ads: {}
+        resource_api_version: V3
+
+      # Tells Envoy to fetch clusters from ADS
+      cds_config:
+        ads: {}
+        resource_api_version: V3

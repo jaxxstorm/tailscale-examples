@@ -1,0 +1,4 @@
+apiVersion: v2
+name: ts-envoy-server
+description: Helm chart for Tailscale sidecar + Envoy servers
+version: 0.1.0

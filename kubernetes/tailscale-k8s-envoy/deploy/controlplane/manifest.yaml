@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: envoy-control-plane
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: envoy-control-plane
+  template:
+    metadata:
+      labels:
+        app: envoy-control-plane
+    spec:
+      containers:
+        - name: control-plane
+          image: "jaxxstorm/tailscale-envoy-controlplane:latest"
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 18000
+              name: xds-grpc
+          env:
+            - name: TS_ENVOY_TAILNET
+              value: "_lbr_sandbox"
+            - name: TS_ENVOY_HOSTNAME
+              value: "tsnet-dynamic-eds"
+            - name: TS_ENVOY_PORT
+              value: "18000"
+            - name: TS_ENVOY_POLL_INTERVAL
+              value: "30"
+            - name: TS_ENVOY_DISCOVERY_TAGS
+              value: "tag:weight-1,tag:weight-2,tag:weight-3"
+            - name: TS_ENVOY_ADVERTISE_TAGS
+              value: tag:envoy
+            - name: TS_ENVOY_AUTHKEY
+              valueFrom:
+                secretKeyRef:
+                  name: tailscale-envoy
+                  key: TS_ENVOY_AUTHKEY
+            - name: TS_ENVOY_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: tailscale-envoy
+                  key: TS_ENVOY_API_TOKEN

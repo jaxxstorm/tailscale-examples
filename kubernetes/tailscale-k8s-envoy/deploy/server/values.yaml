@@ -1,0 +1,5 @@
+# Default Helm values
+controlPlaneHost: ""
+advertiseTags: "--advertise-tags=tag:weight-1"
+replicas: 2
+serverLocality: "west"
