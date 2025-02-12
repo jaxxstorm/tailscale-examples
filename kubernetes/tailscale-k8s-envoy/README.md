@@ -250,4 +250,4 @@ This is a very simple example, with a very simple weighting. I've (ab)used Tails
 
 Envoy supports a variety of different loadbalancing mechanisms, this one leverages [locality weight](https://www.envoyproxy.io/docs/envoy/latest/intro/arch_overview/upstream/load_balancing/locality_weight)
 
-With this implementation, we get all the power of Envoy, without the connectivity of Tailscale!
+With this implementation, we get all the power of Envoy, with the connectivity of Tailscale across any application.
