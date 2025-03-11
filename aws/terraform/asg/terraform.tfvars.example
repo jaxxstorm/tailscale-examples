@@ -1,0 +1,3 @@
+tailscale_auth_key = "ts-key=client-xxxxx?ephemeral=true&preauthorized=true"
+name = "lbr-test"
+advertise_tags = [ "tag:west" ]
