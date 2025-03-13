@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-with-sidecar
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nginx-with-sidecar
+  template:
+    metadata:
+      labels:
+        app: nginx-with-sidecar
+    spec:
+      containers:
+        - name: nginx-with-sidecar
+          image: nginx
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 80
+              name: http
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+        - name: tailscale-sidecar
+          image: "tailscale/tailscale:stable"
+          securityContext:
+            capabilities:
+              add:
+               - NET_ADMIN
+          env:
+            - name: TS_KUBE_SECRET
+              value: ""
+            - name: TS_STATE_DIR
+              value: "/ts-state"
+            - name: TS_ACCEPT_DNS
+              value: "true"
+            - name: TS_USERSPACE
+              value: "false"
+            - name: TS_HOSTNAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            # Example value for advertiseTags
+          volumeMounts:
+            - mountPath: "/ts-state"
+              name: ts-state
+      volumes:
+        - name: ts-state
+          emptyDir:
+            sizeLimit: 500Mi
+
