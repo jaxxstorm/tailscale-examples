@@ -4,7 +4,7 @@ resource "aws_autoscaling_group" "main" {
   min_size            = 1
   desired_capacity    = 1
   health_check_type   = "EC2"
-  vpc_zone_identifier = [module.vpc.public_subnets[0]]
+  availability_zones = [data.aws_subnet.eni_subnet.availability_zone]
 
   launch_template {
     id      = aws_launch_template.main.id
@@ -64,14 +64,26 @@ resource "aws_security_group" "main" {
   })
 }
 
+resource "aws_eip" "main" {
+  domain               = "vpc"
+  network_interface = aws_network_interface.main.id
+
+  # (optional but nice)
+  tags = merge(var.tags, {
+    Name = "${var.name}-eip"
+  })
+}
+
 resource "aws_network_interface" "main" {
-  description     = "${var.name} reusable ENI for routing traffic between sites"
+  description     = "${var.name} static ENI"
   subnet_id       = module.vpc.public_subnets[0]
   security_groups = [aws_security_group.main.id]
-
-  source_dest_check = false
-
+  
   tags = merge(var.tags, {
     Name = var.name
   })
+}
+
+data "aws_subnet" "eni_subnet" {
+  id = aws_network_interface.main.subnet_id
 }

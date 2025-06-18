@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# IMDSv2
+TOKEN=$(curl -sX PUT -H 'X-aws-ec2-metadata-token-ttl-seconds: 300' \
+         http://169.254.169.254/latest/api/token)
+IID=$(curl -sH "X-aws-ec2-metadata-token: $TOKEN" \
+       http://169.254.169.254/latest/meta-data/instance-id)
+REGION=$(curl -sH "X-aws-ec2-metadata-token: $TOKEN" \
+         http://169.254.169.254/latest/meta-data/placement/region)
+
+
+MAX=10 DELAY=5
+for i in $(seq 1 "$MAX"); do
+  echo "Attaching ENI ${ENI_ID} (try $i/$MAX)…"
+  if aws ec2 attach-network-interface --region "$REGION" \
+         --instance-id "$IID" --device-index 1 \
+         --network-interface-id "$ENI_ID"; then
+    echo "ENI attached"; break
+  fi
+  sleep "$DELAY"
+done
+
+hostnamectl set-hostname "$HOSTNAME"
+echo "HOSTNAME=$HOSTNAME" >> /etc/sysconfig/network
+systemctl daemon-reload

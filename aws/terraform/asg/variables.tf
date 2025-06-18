@@ -48,3 +48,9 @@ variable "advertise_tags" {
   type        = list(string)
   default     = []
 }
+
+variable "hostname" {
+  description = "The hostname for the Tailscale ec2 instances"
+  type = string
+  default = "subnet-router"
+}

@@ -46,15 +46,12 @@ resource "aws_launch_template" "main" {
 
 
   network_interfaces {
-    description = "${var.name} ephemeral network interface"
-    subnet_id   = module.vpc.public_subnets[0]
-    #checkov:skip=CKV_AWS_88:Public IP required for direct tailscale connections
-    associate_public_ip_address = true
-    security_groups             = [aws_security_group.main.id]
+    device_index         = 0
+    network_interface_id = aws_network_interface.main.id
   }
 
   dynamic "tag_specifications" {
-    for_each = ["instance", "network-interface", "volume"]
+    for_each = ["instance", "volume"]
 
     content {
       resource_type = tag_specifications.value

@@ -1,3 +1,7 @@
+data "aws_region" "current" {}
+
+data "aws_caller_identity" "current" {}
+
 data "aws_iam_policy_document" "main" {
 
   dynamic "statement" {
@@ -18,6 +22,23 @@ data "aws_iam_policy_document" "main" {
         "*"
       ]
     }
+
+  }
+
+  statement {
+    sid    = "EniAttachAndDisableSrcDst"
+    effect = "Allow"
+    actions = [
+      "ec2:AttachNetworkInterface",
+      "ec2:ModifyInstanceAttribute",
+      "ec2:DescribeInstances",
+      "ec2:DescribeNetworkInterfaces",
+    ]
+
+    resources = [
+      "arn:aws:ec2:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:instance/*",
+      aws_network_interface.main.arn
+    ]
   }
 }
 
