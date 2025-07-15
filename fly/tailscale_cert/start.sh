@@ -10,7 +10,10 @@ echo "running cert command"
 /app/tailscale cert $(/app/tailscale status --json | jq -r .Self.DNSName | sed 's/.$//')
 
 echo "running tailscale serve"
-/app/tailscale serve --tcp 8443 8080 --bg
+/app/tailscale serve --https=443 --bg http://localhost:8080
+
+echo "checking tailscale serve status"
+/app/tailscale serve status
 
 echo "starting npm app"
 npm config set proxy http://localhost:1337/

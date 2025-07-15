@@ -8,7 +8,8 @@ WORKDIR /usr/src/app
 # where available (npm@5+)
 COPY package*.json ./
 
-RUN apk update && apk add ca-certificates iptables ip6tables jq curl && rm -rf /var/cache/apk/*
+# Install system dependencies
+RUN apk update && apk add ca-certificates iptables ip6tables jq curl wget dumb-init && rm -rf /var/cache/apk/*
 
 RUN npm install
 # If you are building your code for production
@@ -16,16 +17,16 @@ RUN npm install
 
 # Bundle app source
 COPY . .
-#COPY start.sh /app/start.sh 
+
+# Make start script executable
+RUN chmod +x /usr/src/app/start.sh
 
 # Copy Tailscale binaries from the tailscale image on Docker Hub.
 COPY --from=docker.io/tailscale/tailscale:stable /usr/local/bin/tailscaled /app/tailscaled
 COPY --from=docker.io/tailscale/tailscale:stable /usr/local/bin/tailscale /app/tailscale
 RUN mkdir -p /var/run/tailscale /var/cache/tailscale /var/lib/tailscale
 
-# WORKDIR /app
+EXPOSE 8080 443
 
-EXPOSE 8080
-# CMD [ "npm", "start" ]
-RUN chmod +x ./start.sh
-CMD ["./start.sh"]
+# Use dumb-init as init
+ENTRYPOINT ["/usr/bin/dumb-init", "--", "/usr/src/app/start.sh"]
