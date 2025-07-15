@@ -31,3 +31,9 @@ variable "tailscale_auth_key" {
   description = "Tailscale auth key for the instance"
   type        = string
 }
+
+variable "enable_ena_srd" {
+  description = "Enable ENA Express (SRD)."
+  type        = bool
+  default     = false
+}
