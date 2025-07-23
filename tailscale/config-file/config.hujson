@@ -1,0 +1,94 @@
+{
+  /* ------------------------------------------------------------------
+     Meta / housekeeping
+     ------------------------------------------------------------------ */
+  "version": "alpha0",         // must be "alpha0" for this schema
+  "locked": false,             // true = forbid `tailscale set` from persisting changes
+
+  /* ------------------------------------------------------------------
+     Control‑plane connectivity & authentication
+     ------------------------------------------------------------------ */
+  "serverURL": "https://controlplane.tailscale.com",     // change only if you run your own control server
+  "authKey": "file:/etc/tailscale/auth.key",             // "tskey-…" or "file:/path"; omit if not needed
+  "enabled": true,                // start engine immediately; false == keep it stopped until `tailscale up`
+
+  /* ------------------------------------------------------------------
+     Local operator & hostname
+     ------------------------------------------------------------------ */
+  "operatorUser": "lee",          // non‑root user allowed to run `tailscale` CLI
+  "hostname": "my‑laptop",        // device name as shown in admin console
+
+  /* ------------------------------------------------------------------
+     Behaviour when joining the tailnet
+     ------------------------------------------------------------------ */
+  "acceptDNS": true,              // accept MagicDNS & nameservers
+  "acceptRoutes": true,           // accept subnet/exit routes advertised by other nodes
+
+  /* ------------------------------------------------------------------
+     Exit‑node settings (client side)
+     ------------------------------------------------------------------ */
+  "exitNode": "100.64.0.1",       // IP, StableNodeID, or MagicDNS base name
+  "allowLANWhileUsingExitNode": false,   // let LAN traffic bypass the exit node
+
+  /* ------------------------------------------------------------------
+     Subnet router / node‑advertisements
+     ------------------------------------------------------------------ */
+  "advertiseRoutes": [
+    "10.42.0.0/16",
+    "192.168.0.0/24"
+  ],
+  "disableSNAT": false,           // true = forward traffic without NAT (advanced)
+
+  /* ------------------------------------------------------------------
+     (Optional) service advertisements for funnel / UI
+     ------------------------------------------------------------------ */
+  "advertiseServices": [
+    "http:80",    // external service name : port
+    "ssh:22"
+  ],
+
+  /* ------------------------------------------------------------------
+     App Connector — see docs for full fields
+     ------------------------------------------------------------------ */
+  "appConnector": {
+    "enabled": true
+  },
+
+  /* ------------------------------------------------------------------
+     Netfilter / firewall integration
+     ------------------------------------------------------------------ */
+  "netfilterMode": "on",          // "on" | "off" | "nodivert"
+  "noStatefulFiltering": false,   // true = disable Tailscale’s extra iptables rules
+
+  /* ------------------------------------------------------------------
+     Misc feature toggles
+     ------------------------------------------------------------------ */
+  "postureChecking": false,       // require device posture (experimental)
+  "runSSHServer": true,           // enable Tailscale SSH
+  "runWebClient": false,          // enable built‑in web client UI
+  "shieldsUp": false,             // block ALL inbound tailnet connections
+
+  /* ------------------------------------------------------------------
+     Auto‑update preferences
+     ------------------------------------------------------------------ */
+  "autoUpdate": {
+    "apply": true,                // automatically download & install updates
+    "check": true                 // check but don’t apply (set apply=false)
+  },
+
+  /* ------------------------------------------------------------------
+     Temporary ServeConfig (internal; subject to change)
+     ------------------------------------------------------------------ */
+  "serveConfigTemp": {
+    // Example: expose local port 8080 on HTTPS
+    "tcp": { "": { "handler": "http" , "port": 8080 } }
+  },
+
+  /* ------------------------------------------------------------------
+     Additional user‑defined WireGuard endpoints to advertise
+     ------------------------------------------------------------------ */
+  "staticEndpoints": [
+    "203.0.113.4:41641",
+    "198.51.100.8:41641"
+  ]
+}
