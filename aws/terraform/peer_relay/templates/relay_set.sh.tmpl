@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Configuration
+MAX_RETRIES=10
+RETRY_DELAY=5
+
+# Function to check if tailscale is running and active
+check_tailscale_status() {
+    if ! command -v tailscale &> /dev/null; then
+        echo "Error: tailscale command not found"
+        exit 1
+    fi
+    
+    # Check if tailscale is running with retries
+    local retry_count=0
+    while [ $retry_count -lt $MAX_RETRIES ]; do
+        if tailscale status &> /dev/null; then
+            echo "tailscale is active and running"
+            return 0
+        fi
+        
+        retry_count=$((retry_count + 1))
+        echo "Attempt $retry_count/$MAX_RETRIES: tailscale is not ready, waiting ${RETRY_DELAY}s..."
+        sleep $RETRY_DELAY
+    done
+    
+    echo "Error: tailscale is not running or not authenticated after $MAX_RETRIES attempts"
+    exit 1
+}
+
+# Function to set relay server port with retries
+set_relay_port() {
+    local retry_count=0
+    while [ $retry_count -lt $MAX_RETRIES ]; do
+        if tailscale set --relay-server-port=${RELAY_SERVER_PORT}; then
+            echo "Successfully set relay server port to ${RELAY_SERVER_PORT}"
+            return 0
+        fi
+        
+        retry_count=$((retry_count + 1))
+        echo "Attempt $retry_count/$MAX_RETRIES: failed to set relay port, waiting ${RETRY_DELAY}s..."
+        sleep $RETRY_DELAY
+    done
+    
+    echo "Error: failed to set relay server port after $MAX_RETRIES attempts"
+    exit 1
+}
+
+# Check tailscale status before proceeding
+check_tailscale_status
+
+# Set the relay server port
+set_relay_port
