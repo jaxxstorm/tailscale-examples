@@ -1,37 +1,52 @@
-// variables.tf
-
-variable "role_prefix" {
-  description = "Prefix for the IAM role and instance profile names."
+variable "architecture" {
+  description = "Architecture of the instance"
   type        = string
-  default     = "ts-"
+  default     = "x86_64"
 }
 
-variable "name" {
-  description = "Base name for resources (e.g., instance, security group)."
+variable "hostname" {
+  description = "Hostname for the Tailscale client"
   type        = string
-  default     = "tailscale-oidc-example"
+  default     = "tailscale-oidc-client"
+}
+
+variable "advertise_tags" {
+  description = "Tags to advertise for the subnet routers"
+  type        = list(string)
+  default     = []
 }
 
 variable "instance_type" {
-  description = "EC2 instance type for the performance instance."
+  description = "The instance type of the EC2 instances"
   type        = string
-  default     = "t3.micro" 
+  default     = "t3.small"
+}
+
+variable "ebs_root_volume_size" {
+  description = "The size of the EBS root volume in GB"
+  type        = number
+  default     = 20
+}
+
+variable "key_pair_name" {
+  description = "The name of the key pair to use for EC2 instances"
+  type        = string
+}
+
+variable "enable_aws_ssm" {
+  description = "Enable AWS SSM permissions for the instance"
+  type        = bool
+  default     = true
 }
 
 variable "tailscale_audience" {
-  description = "The audience claim for Tailscale OIDC tokens. Default is 'tailscale'."
+  description = "The Tailscale OIDC audience"
   type        = string
-  default     = "tailscale"
 }
 
-variable "oidc_certificate_arn" {
-  description = "ACM certificate ARN for the OIDC domain (required if oidc_domain_name is set)"
-  type        = string
-  default     = ""
+variable "tailscale_client_id" {
+    description = "The Tailscale OIDC client ID"
+    type        = string
+  
 }
 
-variable "oidc_tags" {
-  description = "Tags to include in JWT tokens (comma-separated). Example: 'tag:aws,tag:production'"
-  type        = string
-  default     = "tag:aws"
-}

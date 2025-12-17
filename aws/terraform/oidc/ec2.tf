@@ -1,74 +1,128 @@
-// ec2.tf
-data "aws_ami" "amazon_linux" {
+data "aws_ami" "main" {
   most_recent = true
   owners      = ["amazon"]
 
   filter {
-    name   = "name"
-    values = ["al2023-ami-*-x86_64"]
+    name   = "owner-alias"
+    values = ["amazon"]
+  }
+
+  filter {
+    name   = "architecture"
+    values = [var.architecture]
   }
 
   filter {
     name   = "root-device-type"
     values = ["ebs"]
   }
+
   filter {
-    name   = "virtualization-type"
-    values = ["hvm"]
+    name   = "name"
+    values = ["al2023-ami-2023.*"]
   }
 }
 
+module "amz-tailscale-client" {
+  source           = "git::ssh://git@github.com/tailscale/terraform-cloudinit-tailscale.git?ref=main"
+  enable_ssh       = true
+  hostname         = var.hostname
+  client_id        = var.tailscale_client_id
+  id_token         = "$(aws sts get-web-identity-token --audience \"${var.tailscale_audience}\" --signing-algorithm ES384 --duration-seconds 300 --query WebIdentityToken --output text)"
+  advertise_tags   = var.advertise_tags
+  advertise_routes = [local.vpc_cidr]
+  accept_routes    = false
+  max_retries      = 10
+  retry_delay      = 10
+}
+
+data "aws_key_pair" "main" {
+  key_name = var.key_pair_name
+}
 
 resource "aws_security_group" "main" {
-  name        = var.name
-  description = "Used in ${var.name} instance ${module.vpc.public_subnets[0]}"
+  name_prefix = "ec2-sg-"
   vpc_id      = module.vpc.vpc_id
 
+  ingress {
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+    description = "Allow SSH access from anywhere"
+  }
 
   ingress {
-    description = "Allow all VPC traffic"
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["172.16.0.0/16"]
+    protocol = "icmp"
+    from_port = -1
+    to_port = -1
+    cidr_blocks = [local.vpc_cidr]
+    description = "Allow ICMP from within VPC"
   }
 
   egress {
-    description      = "Unrestricted egress"
-    from_port        = 0
-    to_port          = 0
-    protocol         = "-1"
-    cidr_blocks      = ["0.0.0.0/0"]
-    ipv6_cidr_blocks = ["::/0"]
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+    description = "Allow all outbound traffic"
   }
 
 }
 
-resource "aws_instance" "oidc" {
-
-  count         = 1
-  ami           = data.aws_ami.amazon_linux.id
-  instance_type = var.instance_type
-
-  subnet_id              = module.vpc.private_subnets[0]
+resource "aws_launch_template" "main" {
+  name                   = var.hostname
+  image_id               = data.aws_ami.main.id
+  instance_type          = var.instance_type
+  key_name               = data.aws_key_pair.main.key_name
   vpc_security_group_ids = [aws_security_group.main.id]
 
-  iam_instance_profile = aws_iam_instance_profile.tailscale_ec2_oidc.name
+  block_device_mappings {
+    device_name = "/dev/xvda"
 
-  monitoring = true
-
-  user_data_replace_on_change = true
-
-  metadata_options {
-    http_tokens = "required"
-    http_put_response_hop_limit = 1
-    http_endpoint = "enabled"
+    ebs {
+      volume_size = var.ebs_root_volume_size
+      volume_type = "gp3"
+    }
   }
 
+  user_data = module.amz-tailscale-client.rendered
+
+  iam_instance_profile {
+    name = aws_iam_instance_profile.main.name
+  }
+  # Enforce IMDSv2
+  metadata_options {
+    http_endpoint = "enabled"
+    http_tokens   = "required"
+  }
 
 }
 
-output "instance_id" {
-  value = aws_instance.oidc[*].id
+output "user_data" {
+  value = module.amz-tailscale-client.rendered
+}
 
+resource "aws_autoscaling_group" "main" {
+  name                = var.hostname
+  max_size            = 1
+  min_size            = 1
+  desired_capacity    = 1
+  health_check_type   = "EC2"
+  vpc_zone_identifier = module.vpc.private_subnets
+
+
+  launch_template {
+    id      = aws_launch_template.main.id
+    version = aws_launch_template.main.latest_version
+  }
+
+
+  instance_refresh {
+    strategy = "Rolling"
+  }
+
+  timeouts {
+    delete = "15m"
+  }
 }
