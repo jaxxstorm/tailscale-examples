@@ -11,7 +11,24 @@ This Terraform configuration sets up an EC2 instance that authenticates to Tails
 
 ## Setup Instructions
 
-### 1. Configure Tailscale OIDC Trust Credential
+### 1. Enable AWS Outbound Web Identity Federation
+
+Before configuring Tailscale OIDC, you must enable outbound web identity federation in your AWS account.
+
+**Via AWS CLI:**
+```bash
+aws iam enable-outbound-web-identity-federation
+```
+
+**Via AWS Console:**
+1. Go to the [AWS IAM Console](https://console.aws.amazon.com/iam/)
+2. Navigate to **Settings** in the left sidebar
+3. Scroll to **Outbound web identity federation**
+4. Click **Enable** to turn on this feature
+
+This feature allows AWS to issue web identity tokens that can be used to authenticate to external identity providers like Tailscale.
+
+### 2. Configure Tailscale OIDC Trust Credential
 
 Before running Terraform, you need to configure the OIDC trust credential in Tailscale:
 
@@ -44,7 +61,7 @@ Before running Terraform, you need to configure the OIDC trust credential in Tai
 
 6. Click **Create**
 
-### 2. Configure Terraform Variables
+### 3. Configure Terraform Variables
 
 Create or update `terraform.tfvars` with your values:
 
@@ -55,7 +72,7 @@ tailscale_audience = "api.tailscale.com/TdWjeTt8mN11CNTRL-kipyxVChL621CNTRL"  # 
 advertise_tags = ["tag:subnet-router"]  # Tailscale tags for ACLs
 ```
 
-### 3. Deploy
+### 4. Deploy
 
 ```bash
 terraform init
@@ -63,7 +80,7 @@ terraform plan
 terraform apply
 ```
 
-### 4. Verify
+### 5. Verify
 
 After deployment, the EC2 instance should:
 - Automatically authenticate to Tailscale using AWS OIDC tokens
