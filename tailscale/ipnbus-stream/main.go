@@ -8,12 +8,182 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/bubbles/spinner"
+	"github.com/charmbracelet/lipgloss"
 	"tailscale.com/client/local"
 	"tailscale.com/ipn"
 	"tailscale.com/types/netmap"
+)
+
+// RouteEventMsg represents a route change event
+type RouteEventMsg struct {
+	Type       string
+	NodeName   string
+	OldRoutes  []string
+	NewRoutes  []string
+	NodeRoutes map[string][]string
+	Error      string
+	NetMapJSON string // Debug: full netmap as JSON
+}
+
+// Model for bubbletea
+type model struct {
+	spinner spinner.Model
+	status  string
+	events  []string
+	debug   bool
+}
+
+func (m model) Init() tea.Cmd {
+	return m.spinner.Tick
+}
+
+func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "ctrl+c", "q":
+			return m, tea.Quit
+		}
+	case spinner.TickMsg:
+		var cmd tea.Cmd
+		m.spinner, cmd = m.spinner.Update(msg)
+		return m, cmd
+	case RouteEventMsg:
+		timestamp := timestampStyle.Render(time.Now().Format("15:04:05"))
+		
+		switch msg.Type {
+		case "connected":
+			m.status = "Connected to Tailscale daemon"
+			eventStr := fmt.Sprintf("%s %s", 
+				timestamp,
+				connectedStyle.Render("✅ Connected to Tailscale daemon"))
+			m.events = append(m.events, eventStr)
+			
+			// Show initial state
+			if len(msg.NodeRoutes) > 0 {
+				eventStr := fmt.Sprintf("%s %s", 
+					timestamp,
+					connectedStyle.Render("🌐 Initial network state - Active routes:"))
+				m.events = append(m.events, eventStr)
+				for nodeName, routes := range msg.NodeRoutes {
+					detail := fmt.Sprintf("     %s: %s", 
+						nodeStyle.Render(nodeName), 
+						routeStyle.Render(fmt.Sprintf("[%s]", strings.Join(routes, ", "))))
+					m.events = append(m.events, detail)
+				}
+			} else {
+				eventStr := fmt.Sprintf("%s %s", 
+					timestamp,
+					statusStyle.Render("🌐 No routes currently advertised"))
+				m.events = append(m.events, eventStr)
+			}
+			
+		case "preference_change":
+			nodeName := msg.NodeName
+			if nodeName == "" {
+				nodeName = "local"
+			}
+			
+			eventStr := fmt.Sprintf("%s %s %s", 
+				timestamp,
+				routeChangeStyle.Render("🔄 Local route configuration changed:"),
+				nodeStyle.Render(fmt.Sprintf("(%s)", nodeName)))
+			m.events = append(m.events, eventStr)
+			
+			if len(msg.OldRoutes) == 0 {
+				detail := fmt.Sprintf("     %s %s", 
+					routeChangeStyle.Render("Added:"), 
+					routeStyle.Render(fmt.Sprintf("[%s]", strings.Join(msg.NewRoutes, ", "))))
+				m.events = append(m.events, detail)
+			} else if len(msg.NewRoutes) == 0 {
+				detail := fmt.Sprintf("     %s %s", 
+					routeChangeStyle.Render("Removed:"), 
+					routeStyle.Render(fmt.Sprintf("[%s]", strings.Join(msg.OldRoutes, ", "))))
+				m.events = append(m.events, detail)
+			} else {
+				fromDetail := fmt.Sprintf("     %s %s", 
+					routeChangeStyle.Render("From:"), 
+					routeStyle.Render(fmt.Sprintf("[%s]", strings.Join(msg.OldRoutes, ", "))))
+				toDetail := fmt.Sprintf("     %s %s", 
+					routeChangeStyle.Render("To:"), 
+					routeStyle.Render(fmt.Sprintf("[%s]", strings.Join(msg.NewRoutes, ", "))))
+				m.events = append(m.events, fromDetail, toDetail)
+			}
+			
+		case "netmap_update":
+			if len(msg.NodeRoutes) > 0 {
+				eventStr := fmt.Sprintf("%s %s", 
+					timestamp,
+					connectedStyle.Render("🌐 Network routes changed:"))
+				m.events = append(m.events, eventStr)
+				for nodeName, routes := range msg.NodeRoutes {
+					detail := fmt.Sprintf("     %s: %s", 
+						nodeStyle.Render(nodeName), 
+						routeStyle.Render(fmt.Sprintf("[%s]", strings.Join(routes, ", "))))
+					m.events = append(m.events, detail)
+				}
+			} else {
+				eventStr := fmt.Sprintf("%s %s", 
+					timestamp,
+					statusStyle.Render("🌐 No routes currently advertised"))
+				m.events = append(m.events, eventStr)
+			}
+			
+			// Debug: show full netmap
+			if m.debug && msg.NetMapJSON != "" {
+				m.events = append(m.events, fmt.Sprintf("%s %s", 
+					timestamp,
+					debugStyle.Render("🔍 DEBUG - Full NetMap:")))
+				m.events = append(m.events, debugStyle.Render(msg.NetMapJSON))
+			}
+			
+		case "error":
+			eventStr := fmt.Sprintf("%s %s", 
+				timestamp,
+				errorStyle.Render(fmt.Sprintf("❌ Error: %s", msg.Error)))
+			m.events = append(m.events, eventStr)
+		}
+		
+		// Keep only last 50 events to prevent memory issues
+		if len(m.events) > 50 {
+			m.events = m.events[len(m.events)-50:]
+		}
+	}
+	return m, nil
+}
+
+func (m model) View() string {
+	header := headerStyle.Render(fmt.Sprintf("%s %s", m.spinner.View(), m.status))
+	
+	var eventLines []string
+	for _, event := range m.events {
+		eventLines = append(eventLines, event)
+	}
+	
+	body := strings.Join(eventLines, "\n")
+	footer := footerStyle.Render("Press 'q' or 'ctrl+c' to quit")
+	
+	return lipgloss.JoinVertical(lipgloss.Left, header, "", body, "", footer)
+}
+
+var (
+	// Styles
+	headerStyle      = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#7B68EE")).MarginBottom(1)
+	connectedStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("#32CD32"))
+	routeChangeStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#FFD700")).Bold(true)
+	nodeStyle        = lipgloss.NewStyle().Foreground(lipgloss.Color("#87CEEB")).Bold(true)
+	routeStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("#98FB98"))
+	errorStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF6B6B"))
+	statusStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("#DDD"))
+	timestampStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("#666"))
+	footerStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("#666")).MarginTop(1)
+	debugStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("#FFA500")).Faint(true)
 )
 
 func main() {
@@ -23,29 +193,63 @@ func main() {
 
 	flag.StringVar(&socket, "socket", "", "override tailscaled LocalAPI socket/path (leave empty for platform default)")
 	flag.BoolVar(&pretty, "pretty", true, "pretty-print JSON")
-	flag.BoolVar(&debug, "debug", false, "enable debug output")
+	flag.BoolVar(&debug, "debug", false, "enable debug output including full netmap")
 	flag.Parse()
 
 	// Context lifetime is the watch lifetime. Cancel it to stop the stream.
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Handle Ctrl-C / SIGTERM.
+	// Setup bubbletea
+	s := spinner.New()
+	s.Spinner = spinner.Dot
+	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
+
+	m := model{
+		spinner: s,
+		status:  "Connecting to Tailscale daemon...",
+		debug:   debug,
+	}
+
+	// Start the bubbletea program
+	p := tea.NewProgram(m)
+
+	// Handle Ctrl-C / SIGTERM gracefully
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+
+	// Start route monitoring in a goroutine
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				p.Send(RouteEventMsg{
+					Type:  "error",
+					Error: fmt.Sprintf("Monitoring crashed: %v", r),
+				})
+			}
+		}()
+		
+		monitorRoutes(ctx, socket, debug, p)
+	}()
+
+	// Handle signals
 	go func() {
 		<-sigCh
 		cancel()
+		p.Quit()
 	}()
 
+	if _, err := p.Run(); err != nil {
+		log.Fatalf("Error running program: %v", err)
+	}
+}
+
+func monitorRoutes(ctx context.Context, socket string, debug bool, p *tea.Program) {
 	lc := &local.Client{
-		// If Socket is empty, the client uses a platform-specific default.
-		// (unix socket on macOS/Linux, named pipe on Windows, etc.)
 		Socket: socket,
 	}
 
 	// Pick a mask that gives you useful initial state + ongoing engine updates.
-	// You can tune this depending on what you care about.
 	mask := ipn.NotifyInitialState |
 		ipn.NotifyInitialPrefs |
 		ipn.NotifyInitialNetMap |
@@ -53,13 +257,15 @@ func main() {
 
 	w, err := lc.WatchIPNBus(ctx, mask)
 	if err != nil {
-		log.Fatalf("WatchIPNBus: %v", err)
+		p.Send(RouteEventMsg{
+			Type:  "error",
+			Error: fmt.Sprintf("Failed to connect to Tailscale daemon: %v", err),
+		})
+		return
 	}
 	defer func() {
 		_ = w.Close()
 	}()
-
-	log.Printf("Connected to Tailscale daemon - monitoring route changes...")
 
 	var lastAdvertisedRoutes []string
 	var lastNetMapRoutes map[string][]string
@@ -69,37 +275,33 @@ func main() {
 		if err != nil {
 			// When ctx is cancelled, Next returns that error.
 			if ctx.Err() != nil {
-				log.Printf("stopping (ctx done): %v", ctx.Err())
 				return
 			}
-			log.Fatalf("Next: %v", err)
+			p.Send(RouteEventMsg{
+				Type:  "error",
+				Error: fmt.Sprintf("Error reading from IPN bus: %v", err),
+			})
+			return
 		}
 
-		// Debug: log what we received
-		hasPrefs := n.Prefs != nil
-		hasNetMap := n.NetMap != nil
-		if debug {
-			log.Printf("DEBUG: Received notification - Prefs: %v, NetMap: %v", hasPrefs, hasNetMap)
-		}
-
-		// Check for errors
+		// Check for daemon errors
 		if n.ErrMessage != nil {
-			log.Printf("❌ Daemon error: %s", *n.ErrMessage)
+			p.Send(RouteEventMsg{
+				Type:  "error",
+				Error: *n.ErrMessage,
+			})
 		}
 
 		// Check for preferences changes (advertised routes)
 		if n.Prefs != nil {
 			currentRoutes := extractAdvertisedRoutesFromPrefs(n.Prefs)
 			if routesChanged(lastAdvertisedRoutes, currentRoutes) {
-				log.Printf("🔄 Local route configuration changed:")
-				if len(lastAdvertisedRoutes) == 0 {
-					log.Printf("   Added: %v", currentRoutes)
-				} else if len(currentRoutes) == 0 {
-					log.Printf("   Removed: %v", lastAdvertisedRoutes)
-				} else {
-					log.Printf("   From: %v", lastAdvertisedRoutes)
-					log.Printf("   To:   %v", currentRoutes)
-				}
+				p.Send(RouteEventMsg{
+					Type:      "preference_change",
+					NodeName:  "local",
+					OldRoutes: lastAdvertisedRoutes,
+					NewRoutes: currentRoutes,
+				})
 				lastAdvertisedRoutes = currentRoutes
 			}
 		}
@@ -107,28 +309,29 @@ func main() {
 		// Check for NetMap changes (shows which nodes are advertising routes)
 		if n.NetMap != nil {
 			nodeRoutes := extractRoutesFromNetMap(n.NetMap)
+			
+			var netmapJSON string
+			if debug {
+				if b, err := json.MarshalIndent(n.NetMap, "", "  "); err == nil {
+					netmapJSON = string(b)
+				}
+			}
 
 			// Check if network-wide routes changed
 			if lastNetMapRoutes == nil || netMapRoutesChanged(lastNetMapRoutes, nodeRoutes) {
+				eventType := "netmap_update"
 				if lastNetMapRoutes == nil {
-					log.Printf("🌐 Initial network state - Active routes:")
-				} else {
-					log.Printf("🌐 Network routes changed:")
+					eventType = "connected"
 				}
 
-				if len(nodeRoutes) > 0 {
-					for nodeName, routes := range nodeRoutes {
-						log.Printf("   %s: %v", nodeName, routes)
-					}
-				} else {
-					log.Printf("   No routes currently advertised")
-				}
+				p.Send(RouteEventMsg{
+					Type:       eventType,
+					NodeRoutes: nodeRoutes,
+					NetMapJSON: netmapJSON,
+				})
 				lastNetMapRoutes = nodeRoutes
 			}
 		}
-
-		// Skip all other notifications (engine updates, etc.)
-		// Only show route changes and critical errors
 	}
 }
 
