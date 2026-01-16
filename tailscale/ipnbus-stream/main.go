@@ -107,7 +107,7 @@ func main() {
 		// Check for NetMap changes (shows which nodes are advertising routes)
 		if n.NetMap != nil {
 			nodeRoutes := extractRoutesFromNetMap(n.NetMap)
-			
+
 			// Check if network-wide routes changed
 			if lastNetMapRoutes == nil || netMapRoutesChanged(lastNetMapRoutes, nodeRoutes) {
 				if lastNetMapRoutes == nil {
@@ -115,7 +115,7 @@ func main() {
 				} else {
 					log.Printf("🌐 Network routes changed:")
 				}
-				
+
 				if len(nodeRoutes) > 0 {
 					for nodeName, routes := range nodeRoutes {
 						log.Printf("   %s: %v", nodeName, routes)
