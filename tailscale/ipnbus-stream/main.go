@@ -19,9 +19,11 @@ import (
 func main() {
 	var socket string
 	var pretty bool
+	var debug bool
 
 	flag.StringVar(&socket, "socket", "", "override tailscaled LocalAPI socket/path (leave empty for platform default)")
 	flag.BoolVar(&pretty, "pretty", true, "pretty-print JSON")
+	flag.BoolVar(&debug, "debug", false, "enable debug output")
 	flag.Parse()
 
 	// Context lifetime is the watch lifetime. Cancel it to stop the stream.
@@ -60,6 +62,7 @@ func main() {
 	log.Printf("Connected to Tailscale daemon - monitoring route changes...")
 
 	var lastAdvertisedRoutes []string
+	var lastNetMapRoutes map[string][]string
 
 	for {
 		n, err := w.Next()
@@ -72,6 +75,13 @@ func main() {
 			log.Fatalf("Next: %v", err)
 		}
 
+		// Debug: log what we received
+		hasPrefs := n.Prefs != nil
+		hasNetMap := n.NetMap != nil
+		if debug {
+			log.Printf("DEBUG: Received notification - Prefs: %v, NetMap: %v", hasPrefs, hasNetMap)
+		}
+
 		// Check for errors
 		if n.ErrMessage != nil {
 			log.Printf("❌ Daemon error: %s", *n.ErrMessage)
@@ -81,7 +91,7 @@ func main() {
 		if n.Prefs != nil {
 			currentRoutes := extractAdvertisedRoutesFromPrefs(n.Prefs)
 			if routesChanged(lastAdvertisedRoutes, currentRoutes) {
-				log.Printf("🔄 Route configuration changed:")
+				log.Printf("🔄 Local route configuration changed:")
 				if len(lastAdvertisedRoutes) == 0 {
 					log.Printf("   Added: %v", currentRoutes)
 				} else if len(currentRoutes) == 0 {
@@ -97,11 +107,23 @@ func main() {
 		// Check for NetMap changes (shows which nodes are advertising routes)
 		if n.NetMap != nil {
 			nodeRoutes := extractRoutesFromNetMap(n.NetMap)
-			if len(nodeRoutes) > 0 {
-				log.Printf("🌐 Active routes in network:")
-				for nodeName, routes := range nodeRoutes {
-					log.Printf("   %s: %v", nodeName, routes)
+			
+			// Check if network-wide routes changed
+			if lastNetMapRoutes == nil || netMapRoutesChanged(lastNetMapRoutes, nodeRoutes) {
+				if lastNetMapRoutes == nil {
+					log.Printf("🌐 Initial network state - Active routes:")
+				} else {
+					log.Printf("🌐 Network routes changed:")
 				}
+				
+				if len(nodeRoutes) > 0 {
+					for nodeName, routes := range nodeRoutes {
+						log.Printf("   %s: %v", nodeName, routes)
+					}
+				} else {
+					log.Printf("   No routes currently advertised")
+				}
+				lastNetMapRoutes = nodeRoutes
 			}
 		}
 
@@ -225,6 +247,39 @@ func routesChanged(old, new []string) bool {
 
 	for route := range newMap {
 		if !oldMap[route] {
+			return true
+		}
+	}
+
+	return false
+}
+
+// netMapRoutesChanged compares two network maps to detect changes
+func netMapRoutesChanged(old, new map[string][]string) bool {
+	if len(old) != len(new) {
+		return true
+	}
+
+	// Check if any nodes were added or removed
+	for nodeName := range old {
+		if _, exists := new[nodeName]; !exists {
+			return true
+		}
+	}
+
+	for nodeName := range new {
+		if _, exists := old[nodeName]; !exists {
+			return true
+		}
+	}
+
+	// Check if routes for existing nodes changed
+	for nodeName, oldRoutes := range old {
+		newRoutes, exists := new[nodeName]
+		if !exists {
+			return true
+		}
+		if routesChanged(oldRoutes, newRoutes) {
 			return true
 		}
 	}
