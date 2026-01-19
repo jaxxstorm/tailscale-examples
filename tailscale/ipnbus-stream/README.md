@@ -9,6 +9,10 @@ A simple tool that monitors your local Tailscale daemon for route advertisement 
 - Shows which nodes in your network are advertising routes
 - Displays route changes as they happen
 
+## See it in action
+
+[![asciicast](https://asciinema.org/a/769446.svg)](https://asciinema.org/a/769446)
+
 ## Usage
 
 Run the monitor:
