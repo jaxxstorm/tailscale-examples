@@ -12,23 +12,25 @@ import (
 	"syscall"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/bubbles/spinner"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"tailscale.com/client/local"
 	"tailscale.com/ipn"
-	"tailscale.com/types/netmap"
 )
 
-// RouteEventMsg represents a route change event
-type RouteEventMsg struct {
-	Type       string
-	NodeName   string
-	OldRoutes  []string
-	NewRoutes  []string
-	NodeRoutes map[string][]string
-	Error      string
-	NetMapJSON string // Debug: full netmap as JSON
+// IPNEventMsg represents an IPN bus event
+type IPNEventMsg struct {
+	Type    string
+	Message string
+}
+
+// peerProperties tracks observable properties of a peer
+type peerProperties struct {
+	Online         bool
+	OffersExitNode bool
+	SSHEnabled     bool
+	HostinfoJSON   string
 }
 
 // Model for bubbletea
@@ -54,102 +56,28 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.spinner, cmd = m.spinner.Update(msg)
 		return m, cmd
-	case RouteEventMsg:
+	case IPNEventMsg:
 		timestamp := timestampStyle.Render(time.Now().Format("15:04:05"))
-		
-		switch msg.Type {
-		case "connected":
-			m.status = "Connected to Tailscale daemon"
-			eventStr := fmt.Sprintf("%s %s", 
+
+		if msg.Type == "error" {
+			eventStr := fmt.Sprintf("%s %s",
+				timestamp,
+				errorStyle.Render(fmt.Sprintf("❌ %s", msg.Message)))
+			m.events = append(m.events, eventStr)
+		} else if msg.Type == "connected" {
+			m.status = "Watching IPN bus events"
+			eventStr := fmt.Sprintf("%s %s",
 				timestamp,
 				connectedStyle.Render("✅ Connected to Tailscale daemon"))
 			m.events = append(m.events, eventStr)
-			
-			// Show initial state
-			if len(msg.NodeRoutes) > 0 {
-				eventStr := fmt.Sprintf("%s %s", 
-					timestamp,
-					connectedStyle.Render("🌐 Initial network state - Active routes:"))
-				m.events = append(m.events, eventStr)
-				for nodeName, routes := range msg.NodeRoutes {
-					detail := fmt.Sprintf("     %s: %s", 
-						nodeStyle.Render(nodeName), 
-						routeStyle.Render(fmt.Sprintf("[%s]", strings.Join(routes, ", "))))
-					m.events = append(m.events, detail)
-				}
-			} else {
-				eventStr := fmt.Sprintf("%s %s", 
-					timestamp,
-					statusStyle.Render("🌐 No routes currently advertised"))
-				m.events = append(m.events, eventStr)
-			}
-			
-		case "preference_change":
-			nodeName := msg.NodeName
-			if nodeName == "" {
-				nodeName = "local"
-			}
-			
-			eventStr := fmt.Sprintf("%s %s %s", 
+		} else {
+			// Generic event message
+			eventStr := fmt.Sprintf("%s %s",
 				timestamp,
-				routeChangeStyle.Render("🔄 Local route configuration changed:"),
-				nodeStyle.Render(fmt.Sprintf("(%s)", nodeName)))
-			m.events = append(m.events, eventStr)
-			
-			if len(msg.OldRoutes) == 0 {
-				detail := fmt.Sprintf("     %s %s", 
-					routeChangeStyle.Render("Added:"), 
-					routeStyle.Render(fmt.Sprintf("[%s]", strings.Join(msg.NewRoutes, ", "))))
-				m.events = append(m.events, detail)
-			} else if len(msg.NewRoutes) == 0 {
-				detail := fmt.Sprintf("     %s %s", 
-					routeChangeStyle.Render("Removed:"), 
-					routeStyle.Render(fmt.Sprintf("[%s]", strings.Join(msg.OldRoutes, ", "))))
-				m.events = append(m.events, detail)
-			} else {
-				fromDetail := fmt.Sprintf("     %s %s", 
-					routeChangeStyle.Render("From:"), 
-					routeStyle.Render(fmt.Sprintf("[%s]", strings.Join(msg.OldRoutes, ", "))))
-				toDetail := fmt.Sprintf("     %s %s", 
-					routeChangeStyle.Render("To:"), 
-					routeStyle.Render(fmt.Sprintf("[%s]", strings.Join(msg.NewRoutes, ", "))))
-				m.events = append(m.events, fromDetail, toDetail)
-			}
-			
-		case "netmap_update":
-			if len(msg.NodeRoutes) > 0 {
-				eventStr := fmt.Sprintf("%s %s", 
-					timestamp,
-					connectedStyle.Render("🌐 Network routes changed:"))
-				m.events = append(m.events, eventStr)
-				for nodeName, routes := range msg.NodeRoutes {
-					detail := fmt.Sprintf("     %s: %s", 
-						nodeStyle.Render(nodeName), 
-						routeStyle.Render(fmt.Sprintf("[%s]", strings.Join(routes, ", "))))
-					m.events = append(m.events, detail)
-				}
-			} else {
-				eventStr := fmt.Sprintf("%s %s", 
-					timestamp,
-					statusStyle.Render("🌐 No routes currently advertised"))
-				m.events = append(m.events, eventStr)
-			}
-			
-			// Debug: show full netmap
-			if m.debug && msg.NetMapJSON != "" {
-				m.events = append(m.events, fmt.Sprintf("%s %s", 
-					timestamp,
-					debugStyle.Render("🔍 DEBUG - Full NetMap:")))
-				m.events = append(m.events, debugStyle.Render(msg.NetMapJSON))
-			}
-			
-		case "error":
-			eventStr := fmt.Sprintf("%s %s", 
-				timestamp,
-				errorStyle.Render(fmt.Sprintf("❌ Error: %s", msg.Error)))
+				statusStyle.Render(msg.Message))
 			m.events = append(m.events, eventStr)
 		}
-		
+
 		// Keep only last 50 events to prevent memory issues
 		if len(m.events) > 50 {
 			m.events = m.events[len(m.events)-50:]
@@ -160,15 +88,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m model) View() string {
 	header := headerStyle.Render(fmt.Sprintf("%s %s", m.spinner.View(), m.status))
-	
+
 	var eventLines []string
 	for _, event := range m.events {
 		eventLines = append(eventLines, event)
 	}
-	
+
 	body := strings.Join(eventLines, "\n")
 	footer := footerStyle.Render("Press 'q' or 'ctrl+c' to quit")
-	
+
 	return lipgloss.JoinVertical(lipgloss.Left, header, "", body, "", footer)
 }
 
@@ -200,7 +128,22 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Setup bubbletea
+	// Handle Ctrl-C / SIGTERM gracefully
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+
+	// In debug mode, skip bubbletea and just output JSON
+	if debug {
+		go func() {
+			<-sigCh
+			cancel()
+		}()
+		
+		monitorRoutes(ctx, socket, debug, nil)
+		return
+	}
+
+	// Setup bubbletea for normal mode
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
@@ -214,21 +157,17 @@ func main() {
 	// Start the bubbletea program
 	p := tea.NewProgram(m)
 
-	// Handle Ctrl-C / SIGTERM gracefully
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
-
 	// Start route monitoring in a goroutine
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				p.Send(RouteEventMsg{
-					Type:  "error",
-					Error: fmt.Sprintf("Monitoring crashed: %v", r),
+				p.Send(IPNEventMsg{
+					Type:    "error",
+					Message: fmt.Sprintf("Monitoring crashed: %v", r),
 				})
 			}
 		}()
-		
+
 		monitorRoutes(ctx, socket, debug, p)
 	}()
 
@@ -257,9 +196,9 @@ func monitorRoutes(ctx context.Context, socket string, debug bool, p *tea.Progra
 
 	w, err := lc.WatchIPNBus(ctx, mask)
 	if err != nil {
-		p.Send(RouteEventMsg{
-			Type:  "error",
-			Error: fmt.Sprintf("Failed to connect to Tailscale daemon: %v", err),
+		p.Send(IPNEventMsg{
+			Type:    "error",
+			Message: fmt.Sprintf("Failed to connect to Tailscale daemon: %v", err),
 		})
 		return
 	}
@@ -267,8 +206,16 @@ func monitorRoutes(ctx context.Context, socket string, debug bool, p *tea.Progra
 		_ = w.Close()
 	}()
 
+	var connected bool
+	var lastState string
 	var lastAdvertisedRoutes []string
+	var lastExitNode string
+	var lastOfferExitNode bool
+	var lastRunSSH bool
+	var lastShieldsUp bool
+	var lastNetMapPeerCount int
 	var lastNetMapRoutes map[string][]string
+	lastNetMapPeerProps := make(map[string]peerProperties)
 
 	for {
 		n, err := w.Next()
@@ -277,215 +224,257 @@ func monitorRoutes(ctx context.Context, socket string, debug bool, p *tea.Progra
 			if ctx.Err() != nil {
 				return
 			}
-			p.Send(RouteEventMsg{
-				Type:  "error",
-				Error: fmt.Sprintf("Error reading from IPN bus: %v", err),
+			p.Send(IPNEventMsg{
+				Type:    "error",
+				Message: fmt.Sprintf("Error reading from IPN bus: %v", err),
 			})
 			return
 		}
 
-		// Check for daemon errors
-		if n.ErrMessage != nil {
-			p.Send(RouteEventMsg{
-				Type:  "error",
-				Error: *n.ErrMessage,
-			})
-		}
-
-		// Check for preferences changes (advertised routes)
-		if n.Prefs != nil {
-			currentRoutes := extractAdvertisedRoutesFromPrefs(n.Prefs)
-			if routesChanged(lastAdvertisedRoutes, currentRoutes) {
-				p.Send(RouteEventMsg{
-					Type:      "preference_change",
-					NodeName:  "local",
-					OldRoutes: lastAdvertisedRoutes,
-					NewRoutes: currentRoutes,
-				})
-				lastAdvertisedRoutes = currentRoutes
+		// Debug mode: output JSON to stdout
+		if debug {
+			if b, err := json.MarshalIndent(n, "", "  "); err == nil {
+				fmt.Println(string(b))
 			}
-		}
-
-		// Check for NetMap changes (shows which nodes are advertising routes)
-		if n.NetMap != nil {
-			nodeRoutes := extractRoutesFromNetMap(n.NetMap)
-			
-			var netmapJSON string
-			if debug {
-				if b, err := json.MarshalIndent(n.NetMap, "", "  "); err == nil {
-					netmapJSON = string(b)
-				}
-			}
-
-			// Check if network-wide routes changed
-			if lastNetMapRoutes == nil || netMapRoutesChanged(lastNetMapRoutes, nodeRoutes) {
-				eventType := "netmap_update"
-				if lastNetMapRoutes == nil {
-					eventType = "connected"
-				}
-
-				p.Send(RouteEventMsg{
-					Type:       eventType,
-					NodeRoutes: nodeRoutes,
-					NetMapJSON: netmapJSON,
-				})
-				lastNetMapRoutes = nodeRoutes
-			}
-		}
-	}
-}
-
-func printNotify(n ipn.Notify, pretty bool) error {
-	// Add a timestamp wrapper so logs are easier to ingest.
-	type wrapped struct {
-		At     time.Time  `json:"at"`
-		Notify ipn.Notify `json:"notify"`
-	}
-	w := wrapped{At: time.Now(), Notify: n}
-
-	var b []byte
-	var err error
-	if pretty {
-		b, err = json.MarshalIndent(w, "", "  ")
-	} else {
-		b, err = json.Marshal(w)
-	}
-	if err != nil {
-		return err
-	}
-	fmt.Println(string(b))
-	return nil
-}
-
-// extractAdvertisedRoutesFromPrefs extracts the AdvertiseRoutes from preferences
-func extractAdvertisedRoutesFromPrefs(prefs *ipn.PrefsView) []string {
-	var routes []string
-	if prefs != nil {
-		advertiseRoutes := prefs.AdvertiseRoutes()
-		for i := 0; i < advertiseRoutes.Len(); i++ {
-			route := advertiseRoutes.At(i)
-			routes = append(routes, route.String())
-		}
-	}
-	return routes
-}
-
-// extractRoutesFromNetMap extracts routes from all nodes in the network map
-func extractRoutesFromNetMap(netMap *netmap.NetworkMap) map[string][]string {
-	nodeRoutes := make(map[string][]string)
-
-	// Check all peer nodes in the network
-	for _, node := range netMap.Peers {
-		if !node.Valid() {
 			continue
 		}
 
-		nodeName := node.ComputedName()
-		if nodeName == "" {
-			nodeName = node.Name()
+		// Send notification for first connection
+		if !connected {
+			connected = true
+			p.Send(IPNEventMsg{
+				Type:    "connected",
+				Message: "Connected to Tailscale daemon",
+			})
 		}
 
-		var routes []string
-
-		// Get primary routes (subnet routes this node advertises)
-		primaryRoutes := node.PrimaryRoutes()
-		for j := 0; j < primaryRoutes.Len(); j++ {
-			route := primaryRoutes.At(j)
-			routes = append(routes, route.String())
+		// Handle errors
+		if n.ErrMessage != nil {
+			p.Send(IPNEventMsg{
+				Type:    "error",
+				Message: fmt.Sprintf("Error: %s", *n.ErrMessage),
+			})
+			continue
 		}
 
-		// Only include nodes that actually advertise routes
-		if len(routes) > 0 {
-			nodeRoutes[nodeName] = routes
+		// Check for state changes
+		if n.State != nil {
+			newState := n.State.String()
+			if newState != lastState {
+				p.Send(IPNEventMsg{
+					Type:    "event",
+					Message: fmt.Sprintf("📨 State changed: %s", newState),
+				})
+				lastState = newState
+			}
+		}
+
+		// Check for preference changes
+		if n.Prefs != nil {
+			var changes []string
+
+			// Check advertised routes
+			var currentRoutes []string
+			advertiseRoutes := n.Prefs.AdvertiseRoutes()
+			for i := 0; i < advertiseRoutes.Len(); i++ {
+				currentRoutes = append(currentRoutes, advertiseRoutes.At(i).String())
+			}
+			if !stringSliceEqual(currentRoutes, lastAdvertisedRoutes) {
+				changes = append(changes, fmt.Sprintf("AdvertisedRoutes: %v -> %v", lastAdvertisedRoutes, currentRoutes))
+				lastAdvertisedRoutes = currentRoutes
+			}
+
+			// Check exit node selection
+			currentExitNode := ""
+			if n.Prefs.ExitNodeID().IsZero() == false {
+				currentExitNode = fmt.Sprintf("%v", n.Prefs.ExitNodeID())
+			}
+			if currentExitNode != lastExitNode {
+				changes = append(changes, fmt.Sprintf("ExitNode: %s -> %s", lastExitNode, currentExitNode))
+				lastExitNode = currentExitNode
+			}
+
+			// Check if offering as exit node
+			currentOfferExitNode := n.Prefs.AdvertisesExitNode()
+			if currentOfferExitNode != lastOfferExitNode {
+				changes = append(changes, fmt.Sprintf("OfferExitNode: %v -> %v", lastOfferExitNode, currentOfferExitNode))
+				lastOfferExitNode = currentOfferExitNode
+			}
+
+			// Check SSH
+			currentRunSSH := n.Prefs.RunSSH()
+			if currentRunSSH != lastRunSSH {
+				changes = append(changes, fmt.Sprintf("RunSSH: %v -> %v", lastRunSSH, currentRunSSH))
+				lastRunSSH = currentRunSSH
+			}
+
+			// Check shields up
+			currentShieldsUp := n.Prefs.ShieldsUp()
+			if currentShieldsUp != lastShieldsUp {
+				changes = append(changes, fmt.Sprintf("ShieldsUp: %v -> %v", lastShieldsUp, currentShieldsUp))
+				lastShieldsUp = currentShieldsUp
+			}
+
+			if len(changes) > 0 {
+				p.Send(IPNEventMsg{
+					Type:    "event",
+					Message: fmt.Sprintf("📨 Prefs changed: %s", strings.Join(changes, ", ")),
+				})
+			}
+		}
+
+		// Check for NetMap changes
+		if n.NetMap != nil {
+			var changes []string
+
+			// Check peer count
+			currentPeerCount := len(n.NetMap.Peers)
+			if currentPeerCount != lastNetMapPeerCount {
+				changes = append(changes, fmt.Sprintf("Peers: %d -> %d", lastNetMapPeerCount, currentPeerCount))
+				lastNetMapPeerCount = currentPeerCount
+			}
+
+			// Check routes and properties from peers
+			currentRoutes := make(map[string][]string)
+			currentProps := make(map[string]peerProperties)
+			for _, peer := range n.NetMap.Peers {
+				if !peer.Valid() {
+					continue
+				}
+				nodeName := peer.ComputedName()
+
+				// Collect routes
+				var routes []string
+				primaryRoutes := peer.PrimaryRoutes()
+				for i := 0; i < primaryRoutes.Len(); i++ {
+					routes = append(routes, primaryRoutes.At(i).String())
+				}
+				if len(routes) > 0 {
+					currentRoutes[nodeName] = routes
+				}
+
+				// Collect peer properties
+				props := peerProperties{
+					Online: peer.Online().Valid() && peer.Online().Get(),
+				}
+
+				// Check if peer offers exit node (advertises 0.0.0.0/0 or ::/0)
+				for _, route := range routes {
+					if route == "0.0.0.0/0" || route == "::/0" {
+						props.OffersExitNode = true
+						break
+					}
+				}
+
+				// Check SSH by looking at hostinfo
+				if peer.Hostinfo().Valid() {
+					hi := peer.Hostinfo()
+					// SSH is enabled if there are services with TCP port 22
+					if hi.Services().Len() > 0 {
+						for i := 0; i < hi.Services().Len(); i++ {
+							svc := hi.Services().At(i)
+							if svc.Proto == "tcp" && svc.Port == 22 {
+								props.SSHEnabled = true
+								break
+							}
+						}
+					}
+					if hiJSON, err := json.Marshal(hi); err == nil {
+						props.HostinfoJSON = string(hiJSON)
+					}
+				}
+				currentProps[nodeName] = props
+			}
+
+			// Check for route changes
+			if !routeMapEqual(currentRoutes, lastNetMapRoutes) {
+				for node, routes := range currentRoutes {
+					if oldRoutes, exists := lastNetMapRoutes[node]; !exists {
+						changes = append(changes, fmt.Sprintf("Node %s added routes: %v", node, routes))
+					} else if !stringSliceEqual(routes, oldRoutes) {
+						changes = append(changes, fmt.Sprintf("Node %s routes: %v -> %v", node, oldRoutes, routes))
+					}
+				}
+				for node := range lastNetMapRoutes {
+					if _, exists := currentRoutes[node]; !exists {
+						changes = append(changes, fmt.Sprintf("Node %s removed routes", node))
+					}
+				}
+				lastNetMapRoutes = currentRoutes
+			}
+
+			// Check for peer property changes
+			for nodeName, props := range currentProps {
+				if oldProps, exists := lastNetMapPeerProps[nodeName]; exists {
+					if props.Online != oldProps.Online {
+						changes = append(changes, fmt.Sprintf("Node %s Online: %v -> %v", nodeName, oldProps.Online, props.Online))
+					}
+					if props.OffersExitNode != oldProps.OffersExitNode {
+						changes = append(changes, fmt.Sprintf("Node %s OffersExitNode: %v -> %v", nodeName, oldProps.OffersExitNode, props.OffersExitNode))
+					}
+					if props.SSHEnabled != oldProps.SSHEnabled {
+						changes = append(changes, fmt.Sprintf("Node %s SSH: %v -> %v", nodeName, oldProps.SSHEnabled, props.SSHEnabled))
+					}
+					if props.HostinfoJSON != oldProps.HostinfoJSON && props.HostinfoJSON != "" && oldProps.HostinfoJSON != "" {
+						changes = append(changes, fmt.Sprintf("Node %s Hostinfo changed", nodeName))
+					}
+				} else {
+					// New peer - report its initial properties if notable
+					if props.OffersExitNode {
+						changes = append(changes, fmt.Sprintf("Node %s OffersExitNode: %v", nodeName, props.OffersExitNode))
+					}
+					if props.SSHEnabled {
+						changes = append(changes, fmt.Sprintf("Node %s SSH: %v", nodeName, props.SSHEnabled))
+					}
+				}
+			}
+			lastNetMapPeerProps = currentProps
+
+			if len(changes) > 0 {
+				p.Send(IPNEventMsg{
+					Type:    "event",
+					Message: fmt.Sprintf("📨 NetMap changed: %s", strings.Join(changes, ", ")),
+				})
+			}
+		}
+
+		// Check for other important events
+		if n.BrowseToURL != nil {
+			p.Send(IPNEventMsg{
+				Type:    "event",
+				Message: fmt.Sprintf("📨 BrowseToURL: %s", *n.BrowseToURL),
+			})
+		}
+
+		if n.LoginFinished != nil {
+			p.Send(IPNEventMsg{
+				Type:    "event",
+				Message: "📨 Login finished",
+			})
 		}
 	}
-
-	// Also check our own node (SelfNode)
-	if netMap.SelfNode.Valid() {
-		selfNode := netMap.SelfNode
-		nodeName := selfNode.ComputedName()
-		if nodeName == "" {
-			nodeName = selfNode.Name()
-		}
-
-		var routes []string
-		primaryRoutes := selfNode.PrimaryRoutes()
-		for i := 0; i < primaryRoutes.Len(); i++ {
-			route := primaryRoutes.At(i)
-			routes = append(routes, route.String())
-		}
-
-		if len(routes) > 0 {
-			nodeRoutes[nodeName+" (self)"] = routes
-		}
-	}
-
-	return nodeRoutes
 }
 
-// routesChanged compares two route slices to detect changes
-func routesChanged(old, new []string) bool {
-	if len(old) != len(new) {
-		return true
+func stringSliceEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
 	}
-
-	// Create maps for easier comparison
-	oldMap := make(map[string]bool)
-	newMap := make(map[string]bool)
-
-	for _, route := range old {
-		oldMap[route] = true
-	}
-
-	for _, route := range new {
-		newMap[route] = true
-	}
-
-	// Check if any routes were added or removed
-	for route := range oldMap {
-		if !newMap[route] {
-			return true
+	for i := range a {
+		if a[i] != b[i] {
+			return false
 		}
 	}
-
-	for route := range newMap {
-		if !oldMap[route] {
-			return true
-		}
-	}
-
-	return false
+	return true
 }
 
-// netMapRoutesChanged compares two network maps to detect changes
-func netMapRoutesChanged(old, new map[string][]string) bool {
-	if len(old) != len(new) {
-		return true
+func routeMapEqual(a, b map[string][]string) bool {
+	if len(a) != len(b) {
+		return false
 	}
-
-	// Check if any nodes were added or removed
-	for nodeName := range old {
-		if _, exists := new[nodeName]; !exists {
-			return true
+	for k, v := range a {
+		if bv, exists := b[k]; !exists || !stringSliceEqual(v, bv) {
+			return false
 		}
 	}
-
-	for nodeName := range new {
-		if _, exists := old[nodeName]; !exists {
-			return true
-		}
-	}
-
-	// Check if routes for existing nodes changed
-	for nodeName, oldRoutes := range old {
-		newRoutes, exists := new[nodeName]
-		if !exists {
-			return true
-		}
-		if routesChanged(oldRoutes, newRoutes) {
-			return true
-		}
-	}
-
-	return false
+	return true
 }
