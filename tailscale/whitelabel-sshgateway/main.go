@@ -98,7 +98,6 @@ func (sg *SSHGateway) Start(ctx context.Context) error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", sg.handleIndex)                     // No auth - users need to see UI to get login URL
 	mux.HandleFunc("/api/auth/status", sg.handleAuthStatus) // No auth - users need this to see login URL
-	mux.HandleFunc("/api/auth/logout", sg.handleLogout)     // Logout from Tailscale
 	mux.HandleFunc("/api/hosts", sg.handleListHosts)        // No auth - users can see available hosts
 	mux.HandleFunc("/ws/ssh", sg.handleWebSocket)           // No auth - WebSocket connection
 
@@ -170,39 +169,6 @@ func (sg *SSHGateway) handleAuthStatus(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
-}
-
-// handleLogout logs out from Tailscale
-func (sg *SSHGateway) handleLogout(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	ctx := r.Context()
-	localClient, err := sg.tsServer.LocalClient()
-	if err != nil {
-		http.Error(w, "Failed to get local client", http.StatusInternalServerError)
-		return
-	}
-
-	// Logout from Tailscale
-	if err := localClient.Logout(ctx); err != nil {
-		log.Printf("Logout failed: %v", err)
-		http.Error(w, fmt.Sprintf("Logout failed: %v", err), http.StatusInternalServerError)
-		return
-	}
-
-	log.Println("User logged out from Tailscale")
-
-	// Reset auth state
-	sg.authMutex.Lock()
-	sg.authed = false
-	sg.loginURL = ""
-	sg.authMutex.Unlock()
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]bool{"success": true})
 }
 
 // monitorAuthStatus monitors the authentication status and captures login URL
@@ -328,24 +294,26 @@ func (sg *SSHGateway) proxySSHSession(ws *websocket.Conn, targetHost, targetUser
 
 	log.Printf("TCP connection established to %s", target)
 
-	// Setup SSH client config - try passwordless first (Tailscale SSH)
-	// Then fall back to keyboard-interactive
+	// Setup SSH client config - try none auth (for Tailscale SSH)
 	sshConfig := &ssh.ClientConfig{
 		User: targetUser,
 		Auth: []ssh.AuthMethod{
-			// Try empty auth first for Tailscale SSH
-			ssh.Password(""),
+			// Try "none" authentication - Tailscale SSH handles auth via ACLs
 			ssh.KeyboardInteractive(func(user, instruction string, questions []string, echos []bool) ([]string, error) {
-				// For Tailscale SSH, this should succeed without prompts
-				log.Printf("Keyboard interactive: user=%s, instruction=%s, questions=%d", user, instruction, len(questions))
+				log.Printf("Keyboard interactive: instruction=%q, questions=%d", instruction, len(questions))
+				// Return empty answers
 				return make([]string, len(questions)), nil
 			}),
+			ssh.Password(""), // Empty password for Tailscale SSH
 		},
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
-		Timeout:         10 * time.Second,
+		Timeout:         5 * time.Second, // Shorter timeout
 	}
 
 	log.Printf("Attempting SSH handshake with %s as %s...", targetHost, targetUser)
+
+	// Set deadline for the connection
+	conn.SetDeadline(time.Now().Add(10 * time.Second))
 
 	// Establish SSH connection
 	sshConn, chans, reqs, err := ssh.NewClientConn(conn, targetHost, sshConfig)
@@ -353,10 +321,13 @@ func (sg *SSHGateway) proxySSHSession(ws *websocket.Conn, targetHost, targetUser
 		log.Printf("SSH handshake failed: %v (type: %T)", err, err)
 		errMsg := fmt.Sprintf("\r\n\x1b[31mSSH connection failed: %v\x1b[0m\r\n", err)
 		errMsg += "\x1b[33mMake sure Tailscale SSH is enabled on target: tailscale up --ssh\x1b[0m\r\n"
-		errMsg += fmt.Sprintf("\x1b[33mOr check ACLs at https://login.tailscale.com/admin/acls\x1b[0m\r\n")
+		errMsg += "\x1b[33mOr check ACLs at https://login.tailscale.com/admin/acls\x1b[0m\r\n"
 		ws.WriteMessage(websocket.TextMessage, []byte(errMsg))
 		return
 	}
+	
+	// Clear deadline after successful handshake
+	conn.SetDeadline(time.Time{})
 	defer sshConn.Close()
 
 	client := ssh.NewClient(sshConn, chans, reqs)

@@ -41,21 +41,6 @@ func getWebTerminalHTML() string {
             margin: 0;
         }
         
-        .logout-btn {
-            padding: 0.5rem 1rem;
-            background: #BF616A;
-            color: white;
-            border: none;
-            border-radius: 6px;
-            font-size: 0.9rem;
-            cursor: pointer;
-            transition: background 0.2s;
-        }
-        
-        .logout-btn:hover {
-            background: #A54B53;
-        }
-        
         .container {
             flex: 1;
             display: flex;
@@ -342,53 +327,20 @@ func getWebTerminalHTML() string {
                 const response = await fetch('/api/auth/status');
                 const data = await response.json();
                 
-                const logoutBtn = document.getElementById('logoutBtn');
-                
                 if (!data.authenticated && data.loginURL) {
                     // Show auth banner with login URL
                     document.getElementById('authBanner').classList.add('show');
                     document.getElementById('loginLink').href = data.loginURL;
-                    logoutBtn.style.display = 'none';
                     return false;
                 } else if (data.authenticated) {
-                    // Hide auth banner, show logout button
+                    // Hide auth banner
                     document.getElementById('authBanner').classList.remove('show');
-                    logoutBtn.style.display = 'inline-block';
                     return true;
                 }
             } catch (error) {
                 console.error('Failed to check auth status:', error);
             }
             return false;
-        }
-        
-        async function logout() {
-            if (!confirm('Are you sure you want to logout from Tailscale? You will need to re-authenticate.')) {
-                return;
-            }
-            
-            try {
-                const response = await fetch('/api/auth/logout', { method: 'POST' });
-                if (response.ok) {
-                    // Disconnect any active SSH session
-                    if (ws) {
-                        ws.close();
-                        ws = null;
-                    }
-                    // Clear terminal
-                    clearTerminal();
-                    term.writeln('\x1b[33mLogged out from Tailscale. Refresh the page to login again.\x1b[0m');
-                    // Hide logout button
-                    document.getElementById('logoutBtn').style.display = 'none';
-                    // Check status to show login URL
-                    setTimeout(checkAuthStatus, 1000);
-                } else {
-                    alert('Logout failed');
-                }
-            } catch (error) {
-                console.error('Logout error:', error);
-                alert('Logout failed: ' + error.message);
-            }
         }
 
         // Load available hosts
