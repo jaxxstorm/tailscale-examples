@@ -1,0 +1,143 @@
+name: Tailscale Docker Debug
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_url:
+        description: URL to probe from the runner host and Docker containers
+        required: true
+        default: http://172.16.0.91
+        type: string
+      docker_image:
+        description: Docker image to use for bridge and host-network probes
+        required: true
+        default: nicolaka/netshoot:latest
+        type: string
+      tailscale_version:
+        description: Tailscale client version for tailscale/github-action
+        required: true
+        default: latest
+        type: string
+      ping_peer:
+        description: Optional tailnet hostname or IP to verify before probing the target URL
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  debug:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    env:
+      TARGET_URL: ${{ inputs.target_url }}
+      DOCKER_IMAGE: ${{ inputs.docker_image }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Validate required secret
+        env:
+          TAILSCALE_AUTHKEY: ${{ secrets.TAILSCALE_AUTHKEY }}
+        run: |
+          if [ -z "$TAILSCALE_AUTHKEY" ]; then
+            echo "TAILSCALE_AUTHKEY secret is required."
+            exit 1
+          fi
+
+      - name: Install Tailscale
+        uses: tailscale/github-action@v4
+        with:
+          authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
+          version: ${{ inputs.tailscale_version }}
+
+      - name: Show runner and Tailscale state
+        run: |
+          set -x
+          uname -a
+          tailscale version
+          tailscale status || true
+          tailscale ip -4 || true
+          tailscale netcheck || true
+          ip addr
+          ip route
+          ip rule
+          resolvectl status || true
+          docker version
+          docker network ls
+          docker network inspect bridge
+
+      - name: Wait for tailnet peer propagation
+        if: ${{ inputs.ping_peer != '' }}
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 12); do
+            if tailscale ping -c 1 "${{ inputs.ping_peer }}"; then
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Timed out waiting for tailscale peer ${{ inputs.ping_peer }}"
+          exit 1
+
+      - name: Probe target from runner host
+        continue-on-error: true
+        run: |
+          set -euxo pipefail
+          target_host="${TARGET_URL#*://}"
+          target_host="${target_host%%/*}"
+
+          getent hosts "$target_host" || true
+          ping -c 3 "$target_host" || true
+          curl -sv --max-time 20 "$TARGET_URL"
+
+      - name: Probe target from Docker bridge network
+        continue-on-error: true
+        run: |
+          set -euxo pipefail
+          target_host="${TARGET_URL#*://}"
+          target_host="${target_host%%/*}"
+
+          docker run --rm \
+            -e TARGET_URL="$TARGET_URL" \
+            -e TARGET_HOST="$target_host" \
+            "$DOCKER_IMAGE" \
+            sh -lc '
+              set -x
+              ip addr || true
+              ip route || true
+              ping -c 3 "$TARGET_HOST" || true
+              curl -sv --max-time 20 "$TARGET_URL"
+            '
+
+      - name: Probe target from Docker host network
+        continue-on-error: true
+        run: |
+          set -euxo pipefail
+          target_host="${TARGET_URL#*://}"
+          target_host="${target_host%%/*}"
+
+          docker run --rm \
+            --network host \
+            -e TARGET_URL="$TARGET_URL" \
+            -e TARGET_HOST="$target_host" \
+            "$DOCKER_IMAGE" \
+            sh -lc '
+              set -x
+              ip addr || true
+              ip route || true
+              ping -c 3 "$TARGET_HOST" || true
+              curl -sv --max-time 20 "$TARGET_URL"
+            '
+
+      - name: Dump host firewall and policy routing state
+        if: ${{ always() }}
+        run: |
+          set -x
+          sudo sysctl net.ipv4.conf.all.rp_filter net.ipv4.conf.default.rp_filter || true
+          sudo iptables-save || true
+          sudo nft list ruleset || true
